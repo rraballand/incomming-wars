@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Incoming Wars — Mockup Mobile</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Almendra:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --gold: #d4a017; --gold-light: #f0d060; --gold-dim: #8a6a10;
+  --p1: #3b7dd8; --p1-dark: #1a3a6e; --p1-bg: #0e1a2e;
+  --p2: #d83b3b; --p2-dark: #6e1a1a; --p2-bg: #2e0e0e;
+  --bg: #0a0705; --bg2: #14110c; --border: #3d2e1f;
+  --text: #e8dcc8; --text-dim: #8a7a6a; --text-dark: #5a4a3a;
+  --green: #88a844; --red: #cc5544;
+  --tab-h: 64px; --header-h: 48px; --status-h: 80px;
+}
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg); font-family: 'Almendra', serif; color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ═══════ LAYOUT ═══════ */
+.app {
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
+  max-width: 430px; margin: 0 auto;
+  position: relative;
+}
+
+/* ═══════ HEADER ═══════ */
+.header {
+  height: var(--header-h); min-height: var(--header-h);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(180deg, #1a1208, #0f0b06);
+  border-bottom: 1px solid #3d2e1f44;
+  z-index: 10;
+}
+.header-left { display: flex; align-items: center; gap: 8px; }
+.turn-num {
+  font-family: 'Cinzel', serif; font-weight: 900; font-size: .8rem;
+  color: var(--gold); letter-spacing: 1px;
+}
+.phase-pill {
+  font-family: 'Cinzel', serif; font-size: .65rem;
+  padding: 3px 10px; border-radius: 3px; letter-spacing: 1px;
+  background: rgba(59,125,216,.12); color: #7ab4ff; border: 1px solid #3b7dd833;
+}
+.player-toggle {
+  display: flex; border-radius: 4px; overflow: hidden; border: 1px solid #3d2e1f66;
+}
+.player-toggle button {
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: .7rem;
+  padding: 5px 14px; border: none; cursor: pointer;
+  letter-spacing: 1px; transition: all .2s;
+}
+.player-toggle .p1-btn { background: var(--p1-dark); color: #aaccff; }
+.player-toggle .p2-btn { background: #2a1a1a; color: #886666; }
+.player-toggle .p1-btn.active { background: var(--p1); color: #fff; }
+.player-toggle .p2-btn.active { background: var(--p2); color: #fff; }
+
+/* ═══════ STATUS BAR ═══════ */
+.status-bar {
+  min-height: var(--status-h);
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid #3d2e1f33;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.status-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.gold-display {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: 1.1rem;
+  color: var(--gold);
+}
+.gold-display .income {
+  font-size: .65rem; color: var(--green); font-weight: 400;
+}
+.castle-hp {
+  display: flex; flex-direction: column; gap: 3px; flex: 1; margin-left: 16px;
+}
+.castle-label {
+  font-family: 'Cinzel', serif; font-size: .6rem;
+  letter-spacing: 1px; color: var(--text-dim); text-transform: uppercase;
+}
+.hp-bar {
+  width: 100%; height: 14px;
+  background: #0a0805; border-radius: 7px;
+  border: 1px solid #3d2e1f55; overflow: hidden; position: relative;
+}
+.hp-fill {
+  height: 100%; border-radius: 7px; transition: width .4s;
+  background: linear-gradient(90deg, #1a5a1a, #33aa33);
+}
+.hp-text {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-family: 'Cinzel', serif;
+  font-size: .55rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000;
+}
+/* Queue preview */
+.queue-row {
+  display: flex; align-items: center; gap: 4px; min-height: 22px;
+}
+.queue-label {
+  font-family: 'Cinzel', serif; font-size: .55rem;
+  letter-spacing: 1px; color: var(--text-dark); text-transform: uppercase; white-space: nowrap;
+}
+.queue-emojis {
+  display: flex; flex-wrap: wrap; gap: 1px;
+}
+.queue-emojis span { font-size: .85rem; }
+
+/* ═══════ CONTENT AREA ═══════ */
+.content {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 12px 12px calc(var(--tab-h) + 12px + env(safe-area-inset-bottom));
+  scroll-behavior: smooth;
+  scrollbar-width: thin; scrollbar-color: #3d2e1f #0a0805;
+}
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-thumb { background: #3d2e1f; border-radius: 2px; }
+
+/* Section titles */
+.sec-title {
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: .7rem;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);
+  margin: 4px 0 10px; display: flex; align-items: center; gap: 8px;
+}
+.sec-title::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, #3d2e1f44, transparent);
+}
+
+/* ═══════ OGIVE UNIT CARDS ═══════ */
+.unit-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  margin-bottom: 16px;
+}
+.unit-card {
+  position: relative; cursor: pointer; user-select: none;
+  transition: transform .15s, box-shadow .15s;
+}
+.unit-card:active:not(.locked) { transform: scale(.96); }
+.unit-card.locked { opacity: .3; pointer-events: none; }
+.unit-card.off { opacity: .45; }
+
+/* Ogive arch shape via SVG clip & border */
+.ogive-frame {
+  position: relative;
+  background: linear-gradient(180deg, #1e1810, #100d08);
+  border: 1px solid #3d2e1f66;
+  border-radius: 0 0 6px 6px;
+  overflow: hidden;
+  padding-top: 14px;
+  /* Ogive top via pseudo-element */
+}
+.ogive-frame::before {
+  content: '';
+  position: absolute; top: -1px; left: -1px; right: -1px;
+  height: 30px;
+  background: linear-gradient(180deg, #1e1810, #1a1510);
+  border: 1px solid #3d2e1f66;
+  border-bottom: none;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.ogive-inner {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px 6px 10px;
+  text-align: center;
+}
+.unit-emoji { font-size: 2rem; margin-bottom: 4px; }
+.unit-name {
+  font-family: 'Cinzel', serif; font-size: .62rem; font-weight: 700;
+  color: #d8c8a8; line-height: 1.2; margin-bottom: 2px;
+}
+.unit-stats {
+  font-size: .55rem; color: #887868; line-height: 1.3;
+}
+.unit-cost {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  font-family: 'Cinzel', serif; font-size: .65rem; font-weight: 700;
+  color: var(--gold); margin-top: 4px;
+}
+.unit-cost .inc { font-size: .5rem; color: var(--green); font-weight: 400; }
+.unit-count {
+  position: absolute; top: 4px; right: 6px;
+  font-family: 'Cinzel', serif; font-size: .7rem; font-weight: 700;
+  color: var(--gold-light); text-shadow: 0 1px 3px #000; z-index: 2;
+}
+.unit-lock-info {
+  font-size: .5rem; color: #cc8844; margin-top: 2px;
+}
+
+/* ═══════ FORGE CARDS ═══════ */
+.forge-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.forge-card {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, #1e1412, #150e0a);
+  border: 1px solid #5a2a1a44; border-radius: 6px;
+  padding: 10px 12px; cursor: pointer; user-select: none;
+  transition: border-color .2s, transform .15s;
+}
+.forge-card:active { transform: scale(.98); }
+.forge-card.off { opacity: .4; }
+.forge-emoji { font-size: 1.5rem; }
+.forge-info { flex: 1; }
+.forge-name {
+  font-family: 'Cinzel', serif; font-size: .7rem; font-weight: 700; color: #e8a855;
+}
+.forge-desc { font-size: .55rem; color: #887060; margin-top: 1px; }
+.forge-lvl { font-size: .55rem; color: #cc6622; margin-top: 2px; }
+.forge-cost {
+  font-family: 'Cinzel', serif; font-size: .7rem; font-weight: 700;
+  color: var(--gold); white-space: nowrap;
+}
+
+/* ═══════ CHÂTEAU TAB ═══════ */
+.castle-view {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 20px 0;
+}
+.castle-visual {
+  width: 160px; height: 200px;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.castle-icon { font-size: 6rem; }
+.castle-info-card {
+  background: var(--bg2); border: 1px solid #3d2e1f44;
+  border-radius: 6px; padding: 14px 18px; width: 100%;
+}
+.castle-info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid #3d2e1f22;
+}
+.castle-info-row:last-child { border-bottom: none; }
+.castle-info-label {
+  font-family: 'Cinzel', serif; font-size: .65rem;
+  color: var(--text-dim); letter-spacing: 1px;
+}
+.castle-info-value {
+  font-family: 'Cinzel', serif; font-size: .75rem;
+  font-weight: 700; color: var(--text);
+}
+.castle-info-value.gold-val { color: var(--gold); }
+.castle-info-value.green-val { color: var(--green); }
+
+/* ═══════ READY BUTTON ═══════ */
+.ready-btn-wrap {
+  padding: 0 12px 12px;
+}
+.ready-btn {
+  width: 100%; padding: 13px;
+  font-family: 'Cinzel', serif; font-weight: 700; font-size: .9rem;
+  letter-spacing: 3px; text-transform: uppercase;
+  border: 2px solid var(--p1); border-radius: 6px; cursor: pointer;
+  background: linear-gradient(180deg, #1a3a6e, #0e2244);
+  color: #aaccff; transition: all .25s;
+}
+.ready-btn:active { transform: scale(.98); }
+.ready-btn.on {
+  background: linear-gradient(180deg, #2a5a9e, #1a3a6e);
+  box-shadow: 0 0 20px rgba(59,125,216,.3);
+  animation: readyPulse 1.5s infinite;
+}
+@keyframes readyPulse { 0%,100%{opacity:.85} 50%{opacity:1} }
+
+/* ═══════ BOTTOM TAB BAR ═══════ */
+.tab-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--tab-h);
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex; align-items: stretch;
+  background: linear-gradient(180deg, #1a1510, #0f0b06);
+  border-top: 1px solid #3d2e1f55;
+  max-width: 430px; margin: 0 auto;
+  z-index: 100;
+}
+.tab {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
+  cursor: pointer; border: none; background: none;
+  color: var(--text-dark); transition: all .2s;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab.active { color: var(--gold); }
+.tab.active::before {
+  content: ''; position: absolute; top: -1px;
+  left: 20%; right: 20%; height: 2px;
+  background: var(--gold);
+  border-radius: 0 0 2px 2px;
+}
+.tab-icon { font-size: 1.4rem; line-height: 1; }
+.tab-label {
+  font-family: 'Cinzel', serif; font-size: .55rem;
+  font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+}
+.tab-badge {
+  position: absolute; top: 4px; right: 18%;
+  min-width: 16px; height: 16px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cinzel', serif; font-size: .55rem; font-weight: 700;
+  color: #fff; background: var(--p1); border-radius: 8px;
+  padding: 0 4px;
+}
+.tab-badge:empty { display: none; }
+
+/* ═══════ TAB CONTENT ═══════ */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ═══════ RESPONSIVE ═══════ */
+@media (min-width: 380px) {
+  .unit-grid { gap: 12px; }
+  .ogive-inner { padding: 22px 8px 12px; }
+  .unit-emoji { font-size: 2.2rem; }
+}
+@media (max-width: 340px) {
+  .unit-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <span class="turn-num">Tour 3</span>
+      <span class="phase-pill">Preparation</span>
+    </div>
+    <div class="player-toggle">
+      <button class="p1-btn active" onclick="switchPlayer(1)">J1</button>
+      <button class="p2-btn" onclick="switchPlayer(2)">J2</button>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="status-row">
+      <div class="gold-display">
+        <span>&#x1FA99;</span>
+        <span id="gold-val">235</span>
+        <span class="income">(+18/tour)</span>
+      </div>
+      <div class="castle-hp">
+        <div class="castle-label">Chateau</div>
+        <div class="hp-bar">
+          <div class="hp-fill" style="width:82%"></div>
+          <div class="hp-text">820 / 1000</div>
+        </div>
+      </div>
+    </div>
+    <div class="queue-row">
+      <span class="queue-label">File :</span>
+      <div class="queue-emojis" id="queue-display">
+        <span>&#x2694;&#xFE0F;</span><span>&#x2694;&#xFE0F;</span><span>&#x1F3F9;</span>
+        <span style="margin-left:6px">&#x1F9F1;</span><span>&#x1F5FC;</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCROLLABLE CONTENT -->
+  <div class="content" id="content-area">
+
+    <!-- ATQ TAB -->
+    <div class="tab-content active" id="tab-atq">
+      <div class="sec-title">Troupes d'attaque</div>
+      <div class="unit-grid">
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x2694;&#xFE0F;</div>
+              <div class="unit-name">Milicien</div>
+              <div class="unit-stats">ATQ 8 &middot; PV 15</div>
+              <div class="unit-cost">&#x1FA99; 10 <span class="inc">+2g</span></div>
+            </div>
+            <div class="unit-count">x2</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F3F9;</div>
+              <div class="unit-name">Archer</div>
+              <div class="unit-stats">ATQ 15 &middot; PV 10</div>
+              <div class="unit-cost">&#x1FA99; 20 <span class="inc">+4g</span></div>
+            </div>
+            <div class="unit-count">x1</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F434;</div>
+              <div class="unit-name">Chevalier</div>
+              <div class="unit-stats">ATQ 30 &middot; PV 40</div>
+              <div class="unit-cost">&#x1FA99; 50 <span class="inc">+8g</span></div>
+            </div>
+            <div class="unit-count">x0</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F4A3;</div>
+              <div class="unit-name">Catapulte</div>
+              <div class="unit-stats">ATQ 60 &middot; PV 20</div>
+              <div class="unit-cost">&#x1FA99; 100 <span class="inc">+15g</span></div>
+            </div>
+            <div class="unit-count">x0</div>
+          </div>
+        </div>
+
+        <div class="unit-card locked">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F409;</div>
+              <div class="unit-name">Dragon</div>
+              <div class="unit-stats">ATQ 120 &middot; PV 80</div>
+              <div class="unit-cost">&#x1FA99; 250 <span class="inc">+30g</span></div>
+              <div class="unit-lock-info">&#x1F512; Tour 5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="unit-card locked">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F479;</div>
+              <div class="unit-name">Titan</div>
+              <div class="unit-stats">ATQ 200 &middot; PV 150</div>
+              <div class="unit-cost">&#x1FA99; 500 <span class="inc">+50g</span></div>
+              <div class="unit-lock-info">&#x1F512; Tour 10</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DEF TAB -->
+    <div class="tab-content" id="tab-def">
+      <div class="sec-title">Defenses</div>
+      <div class="unit-grid">
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F9F1;</div>
+              <div class="unit-name">Mur de bois</div>
+              <div class="unit-stats">DEF 5 &middot; PV 30</div>
+              <div class="unit-cost">&#x1FA99; 8 <span class="inc">+1g</span></div>
+            </div>
+            <div class="unit-count">x1</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F5FC;</div>
+              <div class="unit-name">Tour d'archers</div>
+              <div class="unit-stats">DEF 18 &middot; PV 25</div>
+              <div class="unit-cost">&#x1FA99; 25 <span class="inc">+4g</span></div>
+            </div>
+            <div class="unit-count">x1</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F3D7;&#xFE0F;</div>
+              <div class="unit-name">Mur de pierre</div>
+              <div class="unit-stats">DEF 12 &middot; PV 60</div>
+              <div class="unit-cost">&#x1FA99; 45 <span class="inc">+6g</span></div>
+            </div>
+            <div class="unit-count">x0</div>
+          </div>
+        </div>
+
+        <div class="unit-card" onclick="flash(this)">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F4A5;</div>
+              <div class="unit-name">Canon</div>
+              <div class="unit-stats">DEF 40 &middot; PV 35</div>
+              <div class="unit-cost">&#x1FA99; 80 <span class="inc">+10g</span></div>
+            </div>
+            <div class="unit-count">x0</div>
+          </div>
+        </div>
+
+        <div class="unit-card locked">
+          <div class="ogive-frame">
+            <div class="ogive-inner">
+              <div class="unit-emoji">&#x1F3F0;</div>
+              <div class="unit-name">Forteresse</div>
+              <div class="unit-stats">DEF 70 &middot; PV 100</div>
+              <div class="unit-cost">&#x1FA99; 200 <span class="inc">+20g</span></div>
+              <div class="unit-lock-info">&#x1F512; Tour 7</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- FORGE TAB -->
+    <div class="tab-content" id="tab-forge">
+      <div class="sec-title">Ameliorations de Forge</div>
+      <div class="forge-list">
+
+        <div class="forge-card" onclick="flash(this)">
+          <div class="forge-emoji">&#x2694;&#xFE0F;</div>
+          <div class="forge-info">
+            <div class="forge-name">Armes ameliorees</div>
+            <div class="forge-desc">+15% ATQ troupes</div>
+            <div class="forge-lvl">Niveau 1</div>
+          </div>
+          <div class="forge-cost">&#x1FA99; 96</div>
+        </div>
+
+        <div class="forge-card" onclick="flash(this)">
+          <div class="forge-emoji">&#x1F6E1;&#xFE0F;</div>
+          <div class="forge-info">
+            <div class="forge-name">Armures renforcees</div>
+            <div class="forge-desc">+15% PV troupes</div>
+            <div class="forge-lvl">Niveau 0</div>
+          </div>
+          <div class="forge-cost">&#x1FA99; 60</div>
+        </div>
+
+        <div class="forge-card" onclick="flash(this)">
+          <div class="forge-emoji">&#x1F3D7;&#xFE0F;</div>
+          <div class="forge-info">
+            <div class="forge-name">Remparts solides</div>
+            <div class="forge-desc">+15% PV defenses</div>
+            <div class="forge-lvl">Niveau 0</div>
+          </div>
+          <div class="forge-cost">&#x1FA99; 50</div>
+        </div>
+
+        <div class="forge-card" onclick="flash(this)">
+          <div class="forge-emoji">&#x1F4DC;</div>
+          <div class="forge-info">
+            <div class="forge-name">Tactiques de guerre</div>
+            <div class="forge-desc">+20% DEF defenses</div>
+            <div class="forge-lvl">Niveau 0</div>
+          </div>
+          <div class="forge-cost">&#x1FA99; 70</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CHATEAU TAB -->
+    <div class="tab-content" id="tab-castle">
+      <div class="castle-view">
+        <div class="castle-visual">
+          <div class="castle-icon">&#x1F3F0;</div>
+        </div>
+        <div class="castle-info-card">
+          <div class="castle-info-row">
+            <span class="castle-info-label">Points de Vie</span>
+            <span class="castle-info-value">820 / 1000</span>
+          </div>
+          <div class="castle-info-row">
+            <span class="castle-info-label">Or disponible</span>
+            <span class="castle-info-value gold-val">&#x1FA99; 235</span>
+          </div>
+          <div class="castle-info-row">
+            <span class="castle-info-label">Revenu / tour</span>
+            <span class="castle-info-value green-val">+18</span>
+          </div>
+          <div class="castle-info-row">
+            <span class="castle-info-label">Troupes ce tour</span>
+            <span class="castle-info-value">3 atq &middot; 2 def</span>
+          </div>
+          <div class="castle-info-row">
+            <span class="castle-info-label">Forge totale</span>
+            <span class="castle-info-value">+15% ATQ</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- READY BUTTON (floating above tabs) -->
+  <div class="ready-btn-wrap" style="position:fixed;bottom:calc(var(--tab-h) + env(safe-area-inset-bottom));left:0;right:0;max-width:430px;margin:0 auto;z-index:50;background:linear-gradient(transparent,var(--bg) 30%);">
+    <button class="ready-btn" id="ready-btn" onclick="toggleReady()">Pret au Combat</button>
+  </div>
+
+  <!-- TAB BAR -->
+  <div class="tab-bar">
+    <button class="tab active" onclick="switchTab('atq',this)">
+      <span class="tab-icon">&#x2694;&#xFE0F;</span>
+      <span class="tab-label">Atq</span>
+      <span class="tab-badge" id="badge-atq">3</span>
+    </button>
+    <button class="tab" onclick="switchTab('def',this)">
+      <span class="tab-icon">&#x1F6E1;&#xFE0F;</span>
+      <span class="tab-label">Def</span>
+      <span class="tab-badge" id="badge-def">2</span>
+    </button>
+    <button class="tab" onclick="switchTab('forge',this)">
+      <span class="tab-icon">&#x1F525;</span>
+      <span class="tab-label">Forge</span>
+      <span class="tab-badge"></span>
+    </button>
+    <button class="tab" onclick="switchTab('castle',this)">
+      <span class="tab-icon">&#x1F3F0;</span>
+      <span class="tab-label">Chateau</span>
+      <span class="tab-badge"></span>
+    </button>
+  </div>
+
+</div>
+
+<script>
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('content-area').scrollTop = 0;
+}
+
+function switchPlayer(p) {
+  var b1 = document.querySelector('.p1-btn');
+  var b2 = document.querySelector('.p2-btn');
+  b1.classList.toggle('active', p === 1);
+  b2.classList.toggle('active', p === 2);
+  var rb = document.getElementById('ready-btn');
+  if (p === 1) {
+    rb.style.borderColor = '#3b7dd8';
+    rb.style.background = 'linear-gradient(180deg, #1a3a6e, #0e2244)';
+    rb.style.color = '#aaccff';
+  } else {
+    rb.style.borderColor = '#d83b3b';
+    rb.style.background = 'linear-gradient(180deg, #6e1a1a, #440e0e)';
+    rb.style.color = '#ffaaaa';
+  }
+}
+
+function toggleReady() {
+  var btn = document.getElementById('ready-btn');
+  btn.classList.toggle('on');
+  btn.textContent = btn.classList.contains('on') ? 'Pret !' : 'Pret au Combat';
+}
+
+function flash(el) {
+  el.style.transform = 'scale(.94)';
+  setTimeout(function() { el.style.transform = ''; }, 120);
+}
+</script>
+
+</body>
+</html>
