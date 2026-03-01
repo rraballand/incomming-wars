@@ -182,6 +182,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     <div style="text-align:center">
       <div class="room-label">Code de la partie :</div>
       <div class="room-code-display" id="room-code-display">----</div>
+      <button class="btn-copy-link" id="btn-copy-link" style="margin-top:6px;font-size:0.7em;background:#2a1a0a;border:1px solid #6B4F2E;color:#FFD54F;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:'Cinzel',serif;">&#x1F517; Copier le lien d'invitation</button>
+      <div id="copy-feedback" style="font-size:0.6em;color:#6B9E48;margin-top:3px;min-height:1em;"></div>
     </div>
   </div>
   <div class="room-row" id="room-join-row">
@@ -320,6 +322,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var aiTimer=0;
   var forgeOpen=false;
   var nextUnitIdx=0;
+  var clientFlip=false;
+  function vY(y){return clientFlip?H-y:y;}
 
   // ── Vertical layout positions ──
   var castleTopY=0;
@@ -360,6 +364,17 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   });
   E("pseudo-input").addEventListener("keydown",function(e){if(e.key==="Enter")onStartClick();});
 
+  E("btn-copy-link").addEventListener("click",function(){
+    var code=E("room-code-display").textContent;
+    if(!code||code==="----")return;
+    var url=window.location.origin+window.location.pathname+"?room="+code;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(url).then(function(){E("copy-feedback").textContent="Lien copie !";setTimeout(function(){E("copy-feedback").textContent="";},2000);});
+    } else {
+      prompt("Copiez ce lien:",url);
+    }
+  });
+
   // Mode buttons
   var selectedMode="ai";
   E("btn-mode-ai").classList.add("active");
@@ -384,6 +399,19 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       E("room-code-display").textContent=code;
     }
   }
+
+  // Auto-join from URL ?room=CODE
+  (function(){
+    var params=new URLSearchParams(window.location.search);
+    var roomCode=params.get("room");
+    if(roomCode){
+      roomCode=roomCode.trim().toUpperCase();
+      E("room-code-input").value=roomCode;
+      selectMode("join");
+      // Clean URL
+      if(window.history.replaceState)window.history.replaceState({},"",window.location.pathname);
+    }
+  })();
 
   // ══════ MATCHMAKING ══════
   var mmInterval=null;
@@ -412,7 +440,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   // ── Quick Match ──
   var QM_PREFIX="iw-qm-";
   var QM_MAX_LOBBIES=10; // try up to 10 lobby slots
-  var QM_TIMEOUT=15000;  // 15s before falling back to AI
+  var QM_TIMEOUT=20000;  // 20s before falling back to AI (min 10s for human to join)
 
   function onQuickMatch(){
     var pseudo=E("pseudo-input").value.trim();
@@ -758,20 +786,22 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       S.gameTime=data.t;
       // Sync unit positions from host
       if(data.units){
-        // Update existing units or recreate from sync
+        // Update existing units from host sync using unique idx
+        var hostIdxs={};
         for(var si=0;si<data.units.length;si++){
           var su=data.units[si];
-          var found=false;
+          hostIdxs[su.idx]=true;
           for(var sj=0;sj<liveUnits.length;sj++){
-            if(liveUnits[sj].player===su.p&&liveUnits[sj].tpl.id===su.id&&Math.abs(liveUnits[sj].y-su.y)<30){
-              liveUnits[sj].x=su.x;liveUnits[sj].y=su.y;liveUnits[sj].hp=su.hp;
-              found=true;break;
+            if(liveUnits[sj].idx===su.idx){
+              liveUnits[sj].x=su.x;liveUnits[sj].y=su.y;liveUnits[sj].curHp=su.hp;
+              if(su.st==="dead"&&liveUnits[sj].state!=="dead"){killUnit(liveUnits[sj],performance.now());}
+              break;
             }
           }
         }
-        // Remove dead units client-side that host no longer has
+        // Remove units client has that host no longer tracks
         for(var ri=liveUnits.length-1;ri>=0;ri--){
-          if(liveUnits[ri].hp<=0)liveUnits.splice(ri,1);
+          if(liveUnits[ri].state!=="dead"&&!hostIdxs[liveUnits[ri].idx])liveUnits.splice(ri,1);
         }
       }
       updateUI();
@@ -806,6 +836,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     szCanvas();
     window.addEventListener("resize",szCanvas);
     S.running=true;S.gameTime=0;
+    clientFlip=(gameMode==="client");
     buildBackground();
     S.p[1]=mp();S.p[2]=mp();
     lastTick=performance.now();
@@ -1086,7 +1117,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
   // ══════ COMBAT HELPERS ══════
   function addFloat(x,y,text,color){
-    floatingDmg.push({x:x,y:y,text:text,color:color,start:performance.now(),dur:1000});
+    floatingDmg.push({x:x,y:vY(y),text:text,color:color,start:performance.now(),dur:1000});
   }
 
   // Find closest enemy within melee range
@@ -1199,7 +1230,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   // ══════ SPRITE SYSTEM ══════
   // Colors per player
   function pCol(p,part){
-    if(p===1){
+    var pp=clientFlip?(3-p):p;
+    if(pp===1){
       if(part==="body")return"#2266bb";if(part==="skin")return"#e8c8a0";
       if(part==="helm")return"#3388dd";if(part==="weapon")return"#aaaaaa";
       if(part==="shield")return"#4488cc";if(part==="accent")return"#5599ee";
@@ -1222,7 +1254,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(isAtk||isRanged){atkSwing=Math.sin(now*0.015)*0.8;}
 
     ctx.save();
-    ctx.translate(u.x,u.y);
+    ctx.translate(u.x,vY(u.y));
 
     // Bounce on attack
     var bScale=1;
@@ -1879,7 +1911,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       var unitSync=[];
       for(var ui=0;ui<liveUnits.length;ui++){
         var uu=liveUnits[ui];
-        unitSync.push({id:uu.tpl.id,p:uu.player,x:uu.x,y:uu.y,hp:uu.hp,st:uu.state});
+        unitSync.push({id:uu.id,idx:uu.idx,p:uu.player,x:uu.x,y:uu.y,hp:uu.curHp,st:uu.state});
       }
       netSend({type:"sync",hp1:S.p[1].hp,hp2:S.p[2].hp,g1:S.p[1].gold,g2:S.p[2].gold,
         t:S.gameTime,ir1:S.p[1].incRate,ir2:S.p[2].incRate,units:unitSync});
@@ -1918,8 +1950,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     ctx.save();ctx.translate(shakeX,shakeY);
 
     // ─── CASTLES (vertical) ───
-    drawCastleV(fieldCenterX,castleTopY,"#d83b3b",S.p[2].hp,MAX_HP,opponentName,true);
-    drawCastleV(fieldCenterX,castleBotY-40,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
+    if(clientFlip){
+      drawCastleV(fieldCenterX,castleTopY,"#d83b3b",S.p[1].hp,MAX_HP,opponentName,true);
+      drawCastleV(fieldCenterX,castleBotY-40,"#3b7dd8",S.p[2].hp,MAX_HP,playerName,false);
+    } else {
+      drawCastleV(fieldCenterX,castleTopY,"#d83b3b",S.p[2].hp,MAX_HP,opponentName,true);
+      drawCastleV(fieldCenterX,castleBotY-40,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
+    }
 
     // ─── CASTLE SHOOTING ───
     if(now-castleTimer1>=CASTLE_SPD){castleTimer1=now;castleShoot(1,now);}
@@ -2043,8 +2080,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       if(u.curHp<u.maxHp){
         var hpPct=Math.max(0,u.curHp/u.maxHp);
         var hpC=hpPct>0.5?"#44bb44":hpPct>0.25?"#bbaa22":"#cc3333";
-        ctx.globalAlpha=0.85;ctx.fillStyle="#222";ctx.fillRect(u.x-14,u.y-26,28,3);
-        ctx.fillStyle=hpC;ctx.fillRect(u.x-14,u.y-26,28*hpPct,3);ctx.globalAlpha=1;
+        var hpY=vY(u.y)-26;
+        ctx.globalAlpha=0.85;ctx.fillStyle="#222";ctx.fillRect(u.x-14,hpY,28,3);
+        ctx.fillStyle=hpC;ctx.fillRect(u.x-14,hpY,28*hpPct,3);ctx.globalAlpha=1;
       }
     });
 
@@ -2065,7 +2103,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         }
         return false;
       }
-      var px=pr.x+(pr.tx-pr.x)*t;var py=pr.y+(pr.ty-pr.y)*t-Math.sin(t*Math.PI)*25;
+      var px=pr.x+(pr.tx-pr.x)*t;var sY=vY(pr.y),eY=vY(pr.ty);var py=sY+(eY-sY)*t-Math.sin(t*Math.PI)*25;
       ctx.beginPath();ctx.arc(px,py,3,0,Math.PI*2);ctx.fillStyle=pr.color;ctx.fill();
       ctx.globalAlpha=0.4;ctx.beginPath();ctx.arc(px,py,6,0,Math.PI*2);ctx.fillStyle=pr.color;ctx.fill();ctx.globalAlpha=1;
       return true;
