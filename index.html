@@ -1209,27 +1209,35 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     S.p[player].gold-=APOCALYPSE_COST;
     // Reduce income by 30%
     S.p[player].incRate=Math.max(0,S.p[player].incRate*(1-APOCALYPSE_INCOME_PENALTY));
-    // Destroy all enemy towers
-    var opp=player===1?2:1;
+    // Destroy ALL towers (both sides)
     for(var i=liveTowers.length-1;i>=0;i--){
       var t=liveTowers[i];
-      if(t.player===opp&&t.alive){
+      if(t.alive){
         t.alive=false;t.deathStart=performance.now();
-        // Explosion particles
-        for(var p=0;p<12;p++){
+        for(var p2=0;p2<12;p2++){
           particles.push({x:t.x+(Math.random()-0.5)*20,y:t.y+(Math.random()-0.5)*20,
             vx:(Math.random()-0.5)*5,vy:(Math.random()-0.5)*5,
             life:1.2,maxLife:1.2,r:Math.random()*6+2,
             color:Math.random()>0.3?"#ff4422":"#ffcc22"});
         }
         addFloat(t.x,vY(t.y),"BOOM","#ff4422");
-        // Free spot
         if(typeof t.spotIdx==="number"){
           var sp=TOWER_SPOTS[t.spotIdx];
           if(sp){sp.owner=0;sp.tower=null;sp.towerObj=null;}
         }
         liveTowers.splice(i,1);
       }
+    }
+    // Destroy ALL units (both sides)
+    for(var i=liveUnits.length-1;i>=0;i--){
+      var u=liveUnits[i];
+      for(var p2=0;p2<6;p2++){
+        particles.push({x:u.x+(Math.random()-0.5)*15,y:u.y+(Math.random()-0.5)*15,
+          vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,
+          life:0.8,maxLife:0.8,r:Math.random()*4+1,
+          color:Math.random()>0.3?"#ff4422":"#ffcc22"});
+      }
+      liveUnits.splice(i,1);
     }
     // Screen shake
     shakes.push({dx:0,dy:0,str:12,dur:0.8,t:0});
