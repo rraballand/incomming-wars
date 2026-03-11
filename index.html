@@ -32,7 +32,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 /* ══════ GAME SCREEN ══════ */
 #game-screen { flex-direction:column; background:#1a2810; }
-#battle-canvas { width:100%; flex:1; display:block; min-height:0; }
+#battle-canvas { width:100%; flex:0 0 auto; display:block; min-height:0; }
 
 /* Info bar — WoW/dark wood style */
 #info-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:linear-gradient(180deg,#2a1a0a,#1a1008); border-top:2px solid #6B4F2E; border-bottom:2px solid #0d0a06; box-shadow:0 2px 8px #00000066; }
@@ -64,6 +64,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .unit-card.card-def { border-left:3px solid var(--def-accent); }
 .unit-card.card-tow { border-left:3px solid #9B59B6; }
 .unit-card.card-selected { border:2px solid #44ff44; box-shadow:0 0 10px #44ff4488; }
+.unit-card.card-apo { border-left:3px solid #ff4422; background:linear-gradient(180deg,#3a1a0a,#2a0a0a); }
 .card-sep { display:flex; align-items:center; color:#555; font-size:18px; padding:0 2px; user-select:none; }
 .unit-card:active { transform:scale(0.92); border-color:#FFD54F; }
 .unit-card.off { opacity:0.4; pointer-events:none; }
@@ -107,9 +108,34 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .forge-card .fc-lvl { font-size:0.5em; color:#8888cc; font-weight:700; }
 .forge-card .fc-cost { font-size:0.6em; color:#FFD54F; font-weight:700; margin-top:2px; }
 
+/* Ad overlay on grass area — positioned by JS */
+#ad-overlay { position:absolute; z-index:15; pointer-events:auto; overflow:hidden; border-radius:2px; background:rgba(0,0,0,0.1); display:none; }
+#game-screen.active #ad-overlay { display:block; }
+#ad-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.25); font-size:10px; font-weight:700; letter-spacing:2px; border:1px dashed rgba(255,255,255,0.12); border-radius:2px; }
+#ad-overlay .adsbygoogle { position:relative; z-index:1; }
+@media(max-width:500px){ #ad-overlay { display:none!important; } }
+
 /* Deploy cooldown visual (hidden - no cooldown) */
 #cd-bar { height:0; }
 #cd-fill { height:0; }
+
+/* Tower placement popup */
+#tower-popup { display:none; position:absolute; z-index:30; pointer-events:auto; }
+#tower-popup.active { display:flex; flex-direction:row; gap:4px; background:linear-gradient(180deg,#1a1008f0,#0d0a06f8); border:2px solid #6B4F2E; border-radius:6px; padding:6px; box-shadow:0 4px 16px rgba(0,0,0,0.6); animation:tpFadeIn 0.15s ease; }
+@keyframes tpFadeIn { 0%{opacity:0;transform:scale(0.85);} 100%{opacity:1;transform:scale(1);} }
+.tp-item { width:52px; background:#2a1a0a; border:2px solid #6B4F2E; border-radius:4px; padding:4px 2px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none; }
+.tp-item:active { transform:scale(0.92); }
+.tp-item:hover { border-color:#FFD54F; background:#3a2a1a; }
+.tp-item.off { opacity:0.35; pointer-events:none; }
+.tp-item.tp-locked { opacity:0.65; border-color:#555; }
+.tp-item.tp-locked:hover { border-color:#6B9E48; }
+.tp-item .tp-em { font-size:18px; line-height:1.2; }
+.tp-item .tp-cost { font-size:0.55em; color:#FFD54F; font-weight:700; }
+.tp-item .tp-lock { font-size:0.5em; color:#FFD54F; font-weight:700; margin-top:1px; }
+.tp-sell { width:36px; background:#3a1a1a; border:2px solid #8B3030; border-radius:4px; padding:4px 2px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none; }
+.tp-sell:hover { border-color:#ff4444; background:#5a2a2a; }
+.tp-sell .tp-em { font-size:16px; }
+.tp-sell .tp-cost { font-size:0.5em; color:#66bb6a; font-weight:700; }
 
 /* Game over overlay — epic WoW style */
 #overlay-gameover { display:none; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 40%,rgba(10,6,3,0.85),rgba(10,6,3,0.95)); z-index:50; justify-content:center; align-items:center; flex-direction:column; text-align:center; padding:30px; }
@@ -242,6 +268,17 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 <!-- ══════ GAME SCREEN ══════ -->
 <div id="game-screen" class="screen">
   <canvas id="battle-canvas"></canvas>
+  <div id="tower-popup"></div>
+  <div id="ad-overlay">
+    <!-- Remplacer par ton code AdSense -->
+    <ins class="adsbygoogle"
+      style="display:block"
+      data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+      data-ad-slot="XXXXXXXXXX"
+      data-ad-format="auto"
+      data-full-width-responsive="false"></ins>
+    <div id="ad-placeholder">PUB</div>
+  </div>
   <div id="log-box"></div>
 
   <div id="info-bar">
@@ -289,7 +326,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var STRONG_VS={militia:"knight",archer:"militia",knight:"archer"};
   var STRONG_MUL=1.5;
   var ATK=[
-    {id:"militia",em:"\u2694\uFE0F",name:"Milicien",cost:10,atk:4,hp:22,speed:1.2,atkSpd:1000,chargeDmg:0,range:0,cat:"atk",inc:0.3,fly:false,siege:false,unlockCost:0},
+    {id:"militia",em:"\u2694\uFE0F",name:"Milicien",cost:10,atk:4,hp:35,speed:1.2,atkSpd:1000,chargeDmg:0,range:0,cat:"atk",inc:0.3,fly:false,siege:false,unlockCost:0},
     {id:"archer",em:"\uD83C\uDFF9",name:"Archer",cost:20,atk:6,hp:16,speed:1.0,atkSpd:800,chargeDmg:0,range:120,cat:"atk",inc:0.5,fly:false,siege:false,unlockCost:30},
     {id:"knight",em:"\uD83D\uDC34",name:"Chevalier",cost:50,atk:10,hp:85,speed:1.3,atkSpd:1100,chargeDmg:28,range:0,cat:"atk",inc:1.0,fly:false,siege:false,unlockCost:80},
     {id:"catapult",em:"\uD83D\uDCA3",name:"Catapulte",cost:100,atk:24,hp:55,speed:0.6,atkSpd:2200,chargeDmg:0,range:150,cat:"atk",inc:1.5,fly:false,siege:true,unlockCost:150},
@@ -310,6 +347,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     {id:"tactics",em:"\uD83C\uDFAF",name:"Balistique",desc:"+15% Port\u00e9e tours",base:70,eff:"range",bon:0.15}
   ];
   var ALLCARDS=ATK.concat(TOWERS);
+  var APOCALYPSE_COST=300;
+  var APOCALYPSE_INCOME_PENALTY=0.30; // -30% income
 
   // ══════ AI PSEUDO GENERATOR ══════
   var AI_PREFIXES=["Dark","Shadow","Iron","Storm","Fire","Ice","Blood","Night","War","Steel",
@@ -357,6 +396,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var nextUnitIdx=0;
   var clientFlip=false;
   var selectedTower=null; // tower id when placing
+  var towerPopupSpot=-1; // index of spot with open popup
   function vY(y){return clientFlip?H-y:y;}
 
   // ── Vertical layout positions ──
@@ -365,61 +405,173 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var CASTLE_HIT_TOP=0;
   var CASTLE_HIT_BOT=0;
   var fieldCenterX=0;
+  var castleX=0;
 
   // ── PATH & TOWER SPOTS ──
   var PATH=[]; // waypoints [{x,y},...] from bottom castle to top castle
   var TOWER_SPOTS=[]; // [{x,y,owner:0,tower:null,towerObj:null},...] owner: 0=none, 1=p1, 2=p2
+  var GRID_COLS=15,GRID_ROWS=0,TILE_SIZE=0;
+  var MAP=[]; // 2D grid: 0=grass, 1=road, 2=tower_p1, 3=tower_p2
 
   function buildPath(){
-    var yBot=castleBotY-25;
-    var yTop=castleTopY+25;
-    var midY=H/2;
-    var xL=Math.max(25,fieldCenterX-W*0.34);
-    var xR=Math.min(W-25,fieldCenterX+W*0.34);
-    // Square wave: horizontal then vertical segments, 4 full zigzags
-    var rows=8; // number of horizontal levels
-    var stepY=(yBot-yTop)/rows;
-    PATH=[{x:fieldCenterX,y:yBot}];
-    // Build square wave bottom to top
-    var goRight=false; // first horizontal goes left
-    for(var r=0;r<rows;r++){
-      var y1=yBot-r*stepY;
-      var y2=yBot-(r+1)*stepY;
-      var xTarget=goRight?xR:xL;
-      // horizontal segment to side
-      PATH.push({x:xTarget,y:y1});
-      // vertical segment up
-      PATH.push({x:xTarget,y:y2});
-      goRight=!goRight;
+    // ─── Grid setup ───
+    TILE_SIZE=Math.floor(W/GRID_COLS);
+    GRID_ROWS=Math.floor(H/TILE_SIZE);
+    var midRow=Math.floor(GRID_ROWS/2);
+
+    // Init grid as all grass
+    MAP=[];
+    for(var r=0;r<GRID_ROWS;r++){MAP[r]=[];for(var c=0;c<GRID_COLS;c++)MAP[r][c]=0;}
+
+    // ─── Build symmetric square-wave path ───
+    var castleCol=Math.floor(GRID_COLS/2);
+    var topRow=1;
+    var botRow=GRID_ROWS-2;
+    var leftCol=1;
+    var rightCol=GRID_COLS-2;
+
+    // Build bottom half path (from castle to river)
+    var halfCells=[];
+    // Spacing=2 means 1 grass row between horizontal roads
+    var spacing=2;
+    var numLevels=Math.max(1,Math.floor(Math.abs(botRow-midRow-1)/spacing));
+
+    var curRow=botRow,curCol=castleCol;
+    halfCells.push([curRow,curCol]);
+    var goLeft=true;
+    for(var lv=0;lv<numLevels;lv++){
+      var targetCol=goLeft?leftCol:rightCol;
+      var nextRow=botRow-((lv+1)*spacing);
+      if(nextRow<=midRow+1)nextRow=midRow+1;
+      var step=targetCol>curCol?1:-1;
+      while(curCol!==targetCol){curCol+=step;halfCells.push([curRow,curCol]);}
+      while(curRow>nextRow){curRow--;halfCells.push([curRow,curCol]);}
+      goLeft=!goLeft;
     }
-    // Final approach to top castle
-    PATH.push({x:fieldCenterX,y:yTop});
+    // Go to center column and reach river
+    var step2=castleCol>curCol?1:-1;
+    if(step2===0)step2=1;
+    while(curCol!==castleCol){curCol+=step2;halfCells.push([curRow,curCol]);}
+    while(curRow>midRow+1){curRow--;halfCells.push([curRow,curCol]);}
+    // Bridge cell
+    halfCells.push([midRow,castleCol]);
 
-    // Find midpoint segment index for player split
-    var midSeg=Math.floor(PATH.length/2);
+    // Mirror bottom half to create top half
+    var topCells=[];
+    for(var i=halfCells.length-1;i>=0;i--){
+      var mirrorRow=midRow-(halfCells[i][0]-midRow);
+      var mirrorCol=halfCells[i][1];
+      topCells.push([mirrorRow,mirrorCol]);
+    }
 
-    // Tower spots: along horizontal segments only (better placement)
+    // Connect bottom castle (right corner) to path start (center)
+    var realCastleCol=GRID_COLS-2;
+    var botConnect=[];
+    for(var c=realCastleCol;c>castleCol;c--){botConnect.push([botRow,c]);}
+    // Connect top path end (center) to top castle (right corner)
+    var topConnect=[];
+    for(var c=castleCol+1;c<=realCastleCol;c++){topConnect.push([topRow,c]);}
+
+    // Full path: bot castle → center zigzag → top castle
+    var pathCells=botConnect.concat(halfCells);
+    for(var i=1;i<topCells.length;i++){pathCells.push(topCells[i]);}
+    for(var i=0;i<topConnect.length;i++){pathCells.push(topConnect[i]);}
+
+    // Mark road on grid
+    for(var i=0;i<pathCells.length;i++){
+      var pr=pathCells[i][0],pc=pathCells[i][1];
+      if(pr>=0&&pr<GRID_ROWS&&pc>=0&&pc<GRID_COLS)MAP[pr][pc]=1;
+    }
+
+    // ─── Tower spots: selective placement along horizontal segments ───
     TOWER_SPOTS=[];
-    var spotOff=30;
-    var spotsPerHSeg=3;
-    for(var i=0;i<PATH.length-1;i++){
-      var ax=PATH[i].x,ay=PATH[i].y;
-      var bx=PATH[i+1].x,by=PATH[i+1].y;
-      var dx=bx-ax,dy=by-ay;
-      var segLen=Math.sqrt(dx*dx+dy*dy);
-      if(segLen<10)continue;
-      var isHoriz=Math.abs(dx)>Math.abs(dy);
-      var nx=-dy/segLen,ny=dx/segLen;
-      var count=isHoriz?spotsPerHSeg:1;
-      var side=(ay>midY||by>midY)?1:2;
-      if(Math.abs(ay-midY)<stepY*0.6&&Math.abs(by-midY)<stepY*0.6) side=(i<midSeg)?1:2;
-      for(var j=0;j<count;j++){
-        var t=(j+1)/(count+1);
-        var px=ax+dx*t,py=ay+dy*t;
-        TOWER_SPOTS.push({x:px+nx*spotOff,y:py+ny*spotOff,owner:0,side:side,tower:null,towerObj:null});
-        TOWER_SPOTS.push({x:px-nx*spotOff,y:py-ny*spotOff,owner:0,side:side,tower:null,towerObj:null});
+    var spotInterval=2;
+    for(var i=1;i<pathCells.length;i++){
+      var prev=pathCells[i-1],cur=pathCells[i];
+      if(cur[0]!==prev[0])continue; // only horizontal
+      var r=cur[0];var c=cur[1];
+      if(r<=topRow+1||r>=botRow-1)continue;
+      if(r===midRow)continue; // skip river
+      if(c<2||c>=GRID_COLS-2)continue;
+      if(i%spotInterval!==0)continue;
+      // Place above or below road
+      var spotR=-1;
+      if(r>midRow){
+        if(r+1<GRID_ROWS&&MAP[r+1][c]===0)spotR=r+1;
+        else if(r-1>=0&&MAP[r-1][c]===0)spotR=r-1;
+      } else {
+        if(r-1>=0&&MAP[r-1][c]===0)spotR=r-1;
+        else if(r+1<GRID_ROWS&&MAP[r+1][c]===0)spotR=r+1;
+      }
+      if(spotR<0||MAP[spotR][c]!==0)continue;
+      var side=spotR>=midRow?1:2;
+      MAP[spotR][c]=side===1?2:3;
+      var sx=c*TILE_SIZE+TILE_SIZE/2, sy=spotR*TILE_SIZE+TILE_SIZE/2;
+      TOWER_SPOTS.push({x:sx,y:sy,owner:0,side:side,tower:null,towerObj:null,gr:spotR,gc:c});
+    }
+
+    // ─── PATH waypoints (direction changes only) ───
+    PATH=[];
+    PATH.push({x:pathCells[0][1]*TILE_SIZE+TILE_SIZE/2, y:pathCells[0][0]*TILE_SIZE+TILE_SIZE/2});
+    for(var i=1;i<pathCells.length-1;i++){
+      var prev=pathCells[i-1],cur=pathCells[i],next=pathCells[i+1];
+      var dr1=cur[0]-prev[0],dc1=cur[1]-prev[1];
+      var dr2=next[0]-cur[0],dc2=next[1]-cur[1];
+      if(dr1!==dr2||dc1!==dc2){
+        PATH.push({x:cur[1]*TILE_SIZE+TILE_SIZE/2, y:cur[0]*TILE_SIZE+TILE_SIZE/2});
       }
     }
+    var last=pathCells[pathCells.length-1];
+    PATH.push({x:last[1]*TILE_SIZE+TILE_SIZE/2, y:last[0]*TILE_SIZE+TILE_SIZE/2});
+
+    // Update castle positions
+    castleBotY=botRow*TILE_SIZE+TILE_SIZE/2;
+    castleTopY=topRow*TILE_SIZE+TILE_SIZE/2;
+    castleX=(GRID_COLS-2)*TILE_SIZE+TILE_SIZE/2;
+    CASTLE_HIT_TOP=castleTopY+TILE_SIZE;
+    CASTLE_HIT_BOT=castleBotY-TILE_SIZE;
+  }
+
+  // Position ad overlay on grid cells (right side, near river)
+  function positionAd(){
+    if(!MAP||!MAP.length)return;
+    var ad=E("ad-overlay");if(!ad)return;
+    var midRow=Math.floor(GRID_ROWS/2);
+    // Find largest grass rectangle on the right side, above the river
+    var bestR=-1,bestC=-1,bestW=0,bestH=0;
+    for(var startR=2;startR<midRow-1;startR++){
+      for(var startC=Math.floor(GRID_COLS/2)+1;startC<GRID_COLS;startC++){
+        if(MAP[startR][startC]!==0)continue;
+        var maxW=0;
+        for(var c=startC;c<GRID_COLS;c++){
+          if(MAP[startR][c]!==0)break;
+          maxW++;
+        }
+        var h=0;
+        outer:for(var r=startR;r<midRow-1&&r<startR+6;r++){
+          for(var c=startC;c<startC+maxW;c++){
+            if(MAP[r][c]!==0){break outer;}
+          }
+          h++;
+        }
+        if(maxW*h>bestW*bestH){bestR=startR;bestC=startC;bestW=maxW;bestH=h;}
+      }
+    }
+    if(bestR<0||bestW<2||bestH<2)return;
+    // Adjust: 1 row down, 1 col narrower on each side
+    bestR+=1; bestC+=1; bestW-=2; bestH+=3;
+    if(bestW<1||bestH<1)return;
+    var rect=canvas.getBoundingClientRect();
+    // Exact tile size in DOM pixels (canvas TILE_SIZE scaled to DOM)
+    var tw=TILE_SIZE*(rect.width/W), th=TILE_SIZE*(rect.height/H);
+    var x1=Math.round(bestC*tw);
+    var y1=Math.round(bestR*th);
+    var x2=Math.round((bestC+bestW)*tw);
+    var y2=Math.round((bestR+bestH)*th);
+    ad.style.left=x1+"px";
+    ad.style.top=y1+"px";
+    ad.style.width=(x2-x1)+"px";
+    ad.style.height=(y2-y1)+"px";
   }
 
   // Get position along path at fraction t (0=bottom, 1=top)
@@ -890,6 +1042,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       var who=(gameMode==="host")?2:1;
       placeTower(who,data.towerId,data.spotIdx);
     }
+    else if(data.type==="apocalypse"){
+      var who=(gameMode==="host")?2:1;
+      triggerApocalypse(who);
+    }
+    else if(data.type==="sellTower"){
+      var who=(gameMode==="host")?2:1;
+      sellTower(who,data.spotIdx);
+    }
     else if(data.type==="unlock"){
       var who=(gameMode==="host")?2:1;
       var tpl=find(ALLCARDS,data.id);
@@ -965,26 +1125,28 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     canvas=E("battle-canvas");ctx=canvas.getContext("2d");
     szCanvas();
     buildPath();
+    positionAd();
     // Canvas click handler for tower placement
     canvas.addEventListener("click",function(ev){
-      if(!selectedTower)return;
       var rect=canvas.getBoundingClientRect();
-      var cx=ev.clientX-rect.left,cy=ev.clientY-rect.top;
-      // Flip Y if client
-      var ry=clientFlip?H-cy:cy;
-      // Find closest available spot on my side
+      // Scale DOM coords to canvas coords
+      var scaleX=W/rect.width, scaleY=H/rect.height;
+      var cx=(ev.clientX-rect.left)*scaleX;
+      var cy=(ev.clientY-rect.top)*scaleY;
+      if(clientFlip)cy=H-cy;
+      // Find closest spot on my side
       var bestIdx=-1,bestDist=9999;
       for(var i=0;i<TOWER_SPOTS.length;i++){
         var s=TOWER_SPOTS[i];
-        if(s.owner!==0||s.side!==myPlayer)continue;
-        var dx=s.x-cx,dy=vY(s.y)-cy;
+        if(s.side!==myPlayer)continue;
+        var dx=s.x-cx,dy=s.y-cy;
         var d=Math.sqrt(dx*dx+dy*dy);
-        if(d<30&&d<bestDist){bestDist=d;bestIdx=i;}
+        if(d<TILE_SIZE*0.7&&d<bestDist){bestDist=d;bestIdx=i;}
       }
       if(bestIdx>=0){
-        placeTower(myPlayer,selectedTower,bestIdx);
-        selectedTower=null;
-        renderCardBar();
+        openTowerPopup(bestIdx,rect);
+      } else {
+        closeTowerPopup();
       }
     });
     window.addEventListener("resize",szCanvas);
@@ -1014,14 +1176,19 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     var cdH=E("cd-bar").offsetHeight||3;
     var cardH=E("card-bar").offsetHeight||70;
     W=canvas.width=r.width;
-    H=canvas.height=Math.max(200,r.height-infoH-cdH-cardH-44);
+    var rawH=Math.max(200,r.height-infoH-cdH-cardH-44);
+    var ts=Math.floor(r.width/GRID_COLS);
+    // Snap canvas height to exact grid rows so tiles are perfect squares
+    H=canvas.height=Math.floor(rawH/ts)*ts;
+    canvas.style.height=H+"px";
     fieldCenterX=W/2;
     // Vertical: IA castle at top, player castle at bottom
     castleTopY=45;
     castleBotY=H-45;
     CASTLE_HIT_TOP=castleTopY+60;
     CASTLE_HIT_BOT=castleBotY-60;
-    if(S.running){buildPath();buildBackground();}
+    closeTowerPopup();
+    if(S.running){buildPath();positionAd();buildBackground();}
   }
 
   // ══════ CARD BAR ══════
@@ -1034,6 +1201,119 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     S.p[player].unlocked[unitId]=true;
     if(player===myPlayer){gf("-"+tpl.unlockCost);renderCardBar();updateUI();}
     if(isHost&&gameMode!=="solo")netSend({type:"unlock",id:unitId});
+  }
+
+  // ══════ APOCALYPSE ══════
+  function triggerApocalypse(player){
+    if(S.p[player].gold<APOCALYPSE_COST)return;
+    S.p[player].gold-=APOCALYPSE_COST;
+    // Reduce income by 30%
+    S.p[player].incRate=Math.max(0,S.p[player].incRate*(1-APOCALYPSE_INCOME_PENALTY));
+    // Destroy all enemy towers
+    var opp=player===1?2:1;
+    for(var i=liveTowers.length-1;i>=0;i--){
+      var t=liveTowers[i];
+      if(t.player===opp&&t.alive){
+        t.alive=false;t.deathStart=performance.now();
+        // Explosion particles
+        for(var p=0;p<12;p++){
+          particles.push({x:t.x+(Math.random()-0.5)*20,y:t.y+(Math.random()-0.5)*20,
+            vx:(Math.random()-0.5)*5,vy:(Math.random()-0.5)*5,
+            life:1.2,maxLife:1.2,r:Math.random()*6+2,
+            color:Math.random()>0.3?"#ff4422":"#ffcc22"});
+        }
+        addFloat(t.x,vY(t.y),"BOOM","#ff4422");
+        // Free spot
+        if(typeof t.spotIdx==="number"){
+          var sp=TOWER_SPOTS[t.spotIdx];
+          if(sp){sp.owner=0;sp.tower=null;sp.towerObj=null;}
+        }
+        liveTowers.splice(i,1);
+      }
+    }
+    // Screen shake
+    shakes.push({dx:0,dy:0,str:12,dur:0.8,t:0});
+    // Visual feedback
+    addFloat(W/2,H/2,"\u2604\uFE0F APOCALYPSE","#ff6600");
+    if(player===myPlayer){gf("-"+APOCALYPSE_COST);updateUI();renderCardBar();}
+    if(isHost&&gameMode!=="solo")netSend({type:"apocalypse"});
+  }
+
+  // ══════ TOWER POPUP ══════
+  function closeTowerPopup(){
+    var popup=E("tower-popup");
+    popup.className="";popup.innerHTML="";
+    towerPopupSpot=-1;
+  }
+
+  function openTowerPopup(spotIdx,canvasRect){
+    var spot=TOWER_SPOTS[spotIdx];
+    var popup=E("tower-popup");
+    towerPopupSpot=spotIdx;
+    popup.innerHTML="";
+    var ul=S.p[myPlayer].unlocked;
+
+    if(spot.owner!==0){
+      // Spot has a tower — show sell option
+      var sell=document.createElement("div");
+      sell.className="tp-sell";
+      var refund=Math.floor(spot.towerObj?spot.towerObj.cost*0.5:0);
+      sell.innerHTML='<div class="tp-em">\u274C</div><div class="tp-cost">+'+refund+'<span class="gc"></span></div>';
+      sell.addEventListener("click",function(){
+        sellTower(myPlayer,spotIdx);
+        closeTowerPopup();
+      });
+      popup.appendChild(sell);
+    } else {
+      // Show available towers
+      TOWERS.forEach(function(t){
+        var locked=t.unlockCost&&!ul[t.id];
+        var noGold=locked?(S.p[myPlayer].gold<t.unlockCost):(S.p[myPlayer].gold<t.cost);
+        var d=document.createElement("div");
+        d.className="tp-item"+(locked?" tp-locked"+(noGold?" off":""):(noGold?" off":""));
+        if(locked){
+          d.innerHTML='<div class="tp-em">'+t.em+'</div><div class="tp-lock">\uD83D\uDD13 '+t.unlockCost+'<span class="gc"></span></div>';
+          d.addEventListener("click",function(){
+            unlockUnit(myPlayer,t.id);
+            if(S.p[myPlayer].unlocked[t.id])openTowerPopup(spotIdx,canvasRect);
+          });
+        } else {
+          d.innerHTML='<div class="tp-em">'+t.em+'</div><div class="tp-cost"><span class="gc"></span>'+t.cost+'</div>';
+          d.addEventListener("click",function(){
+            placeTower(myPlayer,t.id,spotIdx);
+            closeTowerPopup();
+          });
+        }
+        popup.appendChild(d);
+      });
+    }
+
+    // Position popup near the spot (relative to canvas)
+    popup.className="active";
+    var sx=spot.x, sy=vY(spot.y);
+    var popW=popup.offsetWidth||200;
+    var popH=popup.offsetHeight||50;
+    var px=sx-popW/2;
+    var py=sy-popH-12;
+    if(py<5)py=sy+20;
+    if(px<5)px=5;
+    if(px+popW>W-5)px=W-popW-5;
+    popup.style.left=px+"px";
+    popup.style.top=py+"px";
+  }
+
+  function sellTower(player,spotIdx){
+    var spot=TOWER_SPOTS[spotIdx];
+    if(!spot||spot.owner!==player)return;
+    var refund=Math.floor(spot.towerObj?spot.towerObj.cost*0.5:0);
+    S.p[player].gold+=refund;
+    // Remove from liveTowers
+    for(var i=liveTowers.length-1;i>=0;i--){
+      if(liveTowers[i].spotIdx===spotIdx){liveTowers.splice(i,1);break;}
+    }
+    spot.owner=0;spot.tower=null;spot.towerObj=null;
+    if(player===myPlayer){gf("+"+refund);updateUI();}
+    if(isHost&&gameMode!=="solo")netSend({type:"sellTower",spotIdx:spotIdx});
   }
 
   function renderCardBar(){
@@ -1060,33 +1340,16 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       }
       bar.appendChild(c);
     });
-    // Separator
-    var sep=document.createElement("div");
-    sep.className="card-sep";sep.textContent="|";
-    bar.appendChild(sep);
-    // TOWER cards
-    TOWERS.forEach(function(t){
-      var locked=t.unlockCost&&!ul[t.id];
-      var noGold=locked?(S.p[myPlayer].gold<t.unlockCost):(S.p[myPlayer].gold<t.cost);
-      var c=document.createElement("div");
-      var isSelected=selectedTower===t.id;
-      c.className="unit-card card-tow"+(locked?" locked"+(noGold?" off":""):(noGold?" off":""))+(isSelected?" card-selected":"");
-      if(locked){
-        c.innerHTML='<div class="uc-emoji">'+t.em+'</div>'
-          +'<div class="uc-cost"><span class="gc"></span>'+t.cost+'</div>'
-          +'<div class="uc-lock">\uD83D\uDD13 '+t.unlockCost+'<span class="gc"></span></div>';
-        c.addEventListener("click",(function(tid){return function(){unlockUnit(myPlayer,tid);};})(t.id));
-      } else {
-        c.innerHTML='<div class="uc-emoji">'+t.em+'</div>'
-          +'<div class="uc-cost"><span class="gc"></span>'+t.cost+'</div>';
-        c.addEventListener("click",(function(tid){return function(){
-          if(selectedTower===tid){selectedTower=null;}
-          else{selectedTower=tid;}
-          renderCardBar();
-        };})(t.id));
-      }
-      bar.appendChild(c);
-    });
+    // Apocalypse button
+    var apoSep=document.createElement("div");
+    apoSep.className="card-sep";apoSep.textContent="|";
+    bar.appendChild(apoSep);
+    var apoBtn=document.createElement("div");
+    var apoOff=S.p[myPlayer].gold<APOCALYPSE_COST;
+    apoBtn.className="unit-card card-apo"+(apoOff?" off":"");
+    apoBtn.innerHTML='<div class="uc-emoji">\u2604\uFE0F</div><div class="uc-cost"><span class="gc"></span>'+APOCALYPSE_COST+'</div><div class="uc-inc" style="color:#ff6644;font-size:0.5em;">-30% rev</div>';
+    apoBtn.addEventListener("click",function(){triggerApocalypse(myPlayer);});
+    bar.appendChild(apoBtn);
     // Re-add forge button at start
     var forgeBtn=document.createElement("button");
     forgeBtn.id="btn-forge";
@@ -1104,7 +1367,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   function updateCardBar(){
     var cards=E("card-bar").children;
     var ul=S.p[myPlayer].unlocked;
-    // Skip first child (forge button), iterate ATK then sep then TOWERS
+    // Skip first child (forge button), iterate ATK only
     var idx=1;
     for(var i=0;i<ATK.length;i++){
       if(idx>=cards.length)break;
@@ -1115,14 +1378,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       idx++;
     }
     idx++; // skip separator
-    for(var i=0;i<TOWERS.length;i++){
-      if(idx>=cards.length)break;
-      var t=TOWERS[i];
-      var locked=t.unlockCost&&!ul[t.id];
-      var noGold=locked?(S.p[myPlayer].gold<t.unlockCost):(S.p[myPlayer].gold<t.cost);
-      var isSelected=selectedTower===t.id;
-      cards[idx].className="unit-card card-tow"+(locked?" locked"+(noGold?" off":""):(noGold?" off":""))+(isSelected?" card-selected":"");
-      idx++;
+    // Apocalypse button
+    if(idx<cards.length){
+      var apoOff=S.p[myPlayer].gold<APOCALYPSE_COST;
+      cards[idx].className="unit-card card-apo"+(apoOff?" off":"");
     }
   }
 
@@ -1467,13 +1726,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(unit.player===1){
       // Player attacks IA castle (top)
       S.p[2].hp-=dmg;
-      addFloat(fieldCenterX+(Math.random()-0.5)*30,castleTopY+30,"-"+dmg,"#ff2222");
-      for(var pi=0;pi<6;pi++){particles.push({x:fieldCenterX+(Math.random()-0.5)*40,y:castleTopY+20,vx:(Math.random()-0.5)*3,vy:Math.random()*3,life:0.8,maxLife:0.8,r:Math.random()*4+1,color:Math.random()>0.3?"#ff4422":"#ffcc22"});}
+      addFloat(castleX+(Math.random()-0.5)*30,castleTopY+30,"-"+dmg,"#ff2222");
+      for(var pi=0;pi<6;pi++){particles.push({x:castleX+(Math.random()-0.5)*40,y:castleTopY+20,vx:(Math.random()-0.5)*3,vy:Math.random()*3,life:0.8,maxLife:0.8,r:Math.random()*4+1,color:Math.random()>0.3?"#ff4422":"#ffcc22"});}
     } else {
       // IA attacks player castle (bottom)
       S.p[1].hp-=dmg;
-      addFloat(fieldCenterX+(Math.random()-0.5)*30,castleBotY-30,"-"+dmg,"#ff2222");
-      for(var pi=0;pi<6;pi++){particles.push({x:fieldCenterX+(Math.random()-0.5)*40,y:castleBotY-20,vx:(Math.random()-0.5)*3,vy:-Math.random()*3,life:0.8,maxLife:0.8,r:Math.random()*4+1,color:Math.random()>0.3?"#ff4422":"#ffcc22"});}
+      addFloat(castleX+(Math.random()-0.5)*30,castleBotY-30,"-"+dmg,"#ff2222");
+      for(var pi=0;pi<6;pi++){particles.push({x:castleX+(Math.random()-0.5)*40,y:castleBotY-20,vx:(Math.random()-0.5)*3,vy:-Math.random()*3,life:0.8,maxLife:0.8,r:Math.random()*4+1,color:Math.random()>0.3?"#ff4422":"#ffcc22"});}
     }
     shakes.push({start:now,dur:250,intensity:5});
   }
@@ -1494,7 +1753,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(!best)return;
     var dmg=CASTLE_ATK;best.curHp-=dmg;
     addFloat(best.x,best.y-22,"-"+dmg,"#8888ff");
-    projectiles.push({x:fieldCenterX,y:castleY,tx:best.x,ty:best.y,start:now,dur:350,color:castlePlayer===1?"#5588dd":"#dd5555"});
+    projectiles.push({x:castleX,y:castleY,tx:best.x,ty:best.y,start:now,dur:350,color:castlePlayer===1?"#5588dd":"#dd5555"});
     if(best.curHp<=0){killUnit(best,now);addLog("\uD83C\uDFF0 Ch\u00e2teau a tu\u00e9 "+best.em+" !","kill");}
   }
 
@@ -1562,11 +1821,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       ctx.beginPath();ctx.moveTo(-5,-10);ctx.lineTo(5,-10);ctx.lineTo(6,-14);ctx.lineTo(0,-16);ctx.lineTo(-6,-14);ctx.closePath();ctx.fill();ctx.stroke();
       // Eyes
       ctx.fillStyle="#222";ctx.fillRect(-2,-9,2,2);ctx.fillRect(1,-9,2,2);
-      // Sword (right arm)
+      // Sword (right arm) - blade points UP
       ctx.save();ctx.translate(7,-2);ctx.rotate(-0.3+atkSwing);
-      ctx.fillStyle="#bbb";ctx.fillRect(-1,-1,3,14);ctx.strokeRect(-1,-1,3,14);
+      ctx.fillStyle="#bbb";ctx.fillRect(-1,-15,3,14);ctx.strokeRect(-1,-15,3,14);
       ctx.fillStyle="#8B6914";ctx.fillRect(-2,-1,5,3);ctx.strokeRect(-2,-1,5,3);
-      ctx.fillStyle="#ddd";ctx.beginPath();ctx.moveTo(0.5,-1);ctx.lineTo(-1,-4);ctx.lineTo(2,-4);ctx.closePath();ctx.fill();
+      ctx.fillStyle="#ddd";ctx.beginPath();ctx.moveTo(0.5,-15);ctx.lineTo(-1,-18);ctx.lineTo(2,-18);ctx.closePath();ctx.fill();
       ctx.restore();
     }
     else if(id==="archer"){
@@ -1645,8 +1904,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       ctx.beginPath();ctx.moveTo(0,-26);ctx.quadraticCurveTo(6,-30,2,-24);ctx.fill();
       // Lance
       ctx.save();ctx.translate(6,-10);ctx.rotate(-0.15+atkSwing*0.5);
-      ctx.fillStyle="#8B6914";ctx.fillRect(-1,0,3,24);ctx.strokeRect(-1,0,3,24);
-      ctx.fillStyle=pCol(p,"weapon");ctx.beginPath();ctx.moveTo(0.5,-4);ctx.lineTo(-2,1);ctx.lineTo(3,1);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.fillStyle="#8B6914";ctx.fillRect(-1,-24,3,24);ctx.strokeRect(-1,-24,3,24);
+      ctx.fillStyle=pCol(p,"weapon");ctx.beginPath();ctx.moveTo(0.5,-28);ctx.lineTo(-2,-24);ctx.lineTo(3,-24);ctx.closePath();ctx.fill();ctx.stroke();
       ctx.restore();
       // Charge dust
       if(isCharging){
@@ -2059,12 +2318,15 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   function drawCastleV(cx,y,col,hp,max,label,isTop){
     var pct=Math.max(0,hp/max);
     var cw=66,ch=44;
-    var rx=cx-cw/2;
     var isBlue=col!=="#d83b3b";
     var wall1=isBlue?"#4A6A90":"#905050";
     var wall2=isBlue?"#5A80A8":"#A86060";
     var dark=isBlue?"#2A4060":"#602020";
     var light=isBlue?"#7098C0":"#C08080";
+
+    // No flip — castle always upright
+
+    var rx=cx-cw/2;
 
     // Shadow
     ctx.fillStyle="rgba(0,0,0,0.2)";
@@ -2087,16 +2349,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     var tpos=[cx-22,cx,cx+22];
     for(var ti=0;ti<3;ti++){
       var tx=tpos[ti]-tw/2;
-      var ty=isTop?y+ch-4:y-th+8;
+      var ty=y-th+8;
       // Tower body
       ctx.fillStyle=wall2;roundRect(tx,ty,tw,th,2);ctx.fill();
       ctx.strokeStyle=dark;ctx.lineWidth=1;roundRect(tx,ty,tw,th,2);ctx.stroke();
       // Roof (pointed)
-      var roofY=isTop?ty+th:ty;
-      var roofDir=isTop?1:-1;
       ctx.fillStyle=isBlue?"#2A4060":"#802020";
       ctx.beginPath();
-      ctx.moveTo(tx-2,roofY);ctx.lineTo(tx+tw/2,roofY+10*roofDir);ctx.lineTo(tx+tw+2,roofY);ctx.fill();
+      ctx.moveTo(tx-2,ty);ctx.lineTo(tx+tw/2,ty-10);ctx.lineTo(tx+tw+2,ty);ctx.fill();
       // Window glow
       ctx.fillStyle="#FFE08888";
       ctx.beginPath();ctx.arc(tx+tw/2,ty+th/2,2.5,0,Math.PI*2);ctx.fill();
@@ -2110,29 +2370,30 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     // Gate
     ctx.fillStyle=dark;
-    var gateY=isTop?y+ch-14:y+8;
+    var gateY=y+8;
     ctx.beginPath();ctx.moveTo(cx-7,gateY+14);ctx.lineTo(cx-7,gateY+5);
     ctx.arc(cx,gateY+5,7,Math.PI,0);ctx.lineTo(cx+7,gateY+14);ctx.fill();
     ctx.fillStyle="#00000033";
     ctx.beginPath();ctx.moveTo(cx,gateY+1);ctx.lineTo(cx,gateY+14);ctx.strokeStyle="#00000044";ctx.lineWidth=0.5;ctx.stroke();
 
     // Flag (center tower, animated)
-    var flagY=isTop?y+ch+th+4:y-th-6;
+    var flagY=y-th-6;
     var wave=Math.sin(performance.now()/250)*2.5;
     ctx.strokeStyle=dark;ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(cx,flagY);ctx.lineTo(cx,flagY+(isTop?-12:12));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,flagY);ctx.lineTo(cx,flagY+12);ctx.stroke();
     ctx.fillStyle=col;
-    var fy1=isTop?flagY-12:flagY+3;
-    ctx.beginPath();ctx.moveTo(cx,fy1);ctx.lineTo(cx+9+wave,fy1+4);ctx.lineTo(cx,fy1+8);ctx.fill();
+    ctx.beginPath();ctx.moveTo(cx,flagY+3);ctx.lineTo(cx+9+wave,flagY+7);ctx.lineTo(cx,flagY+11);ctx.fill();
 
-    // HP bar
+    // (no flip to restore)
+
+    // HP bar (drawn OUTSIDE flip so it stays readable)
     var hpC=pct>0.5?"#4CAF50":pct>0.25?"#FFC107":"#E53935";
     var hpY=isTop?y-8:y+ch+4;
     ctx.fillStyle="#00000055";roundRect(rx+4,hpY,cw-8,6,3);ctx.fill();
     if(pct>0){ctx.fillStyle=hpC;roundRect(rx+5,hpY+1,Math.max(3,(cw-10)*pct),4,2);ctx.fill();}
     if(pct>0){ctx.fillStyle="#ffffff22";roundRect(rx+5,hpY+1,Math.max(3,(cw-10)*pct),2,2);ctx.fill();}
 
-    // Label + HP text (outlined)
+    // Label + HP text (outside flip)
     ctx.textAlign="center";ctx.strokeStyle="#000";
     ctx.font="bold 10px Cinzel,serif";ctx.lineWidth=3;ctx.fillStyle="#fff";
     var ly=isTop?y-14:y+ch+16;
@@ -2159,148 +2420,100 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     bgCanvas=document.createElement("canvas");
     bgCanvas.width=W;bgCanvas.height=H;
     var b=bgCanvas.getContext("2d");
+    var ts=TILE_SIZE;
 
-    // ─── Sky gradient ───
-    var sky=b.createLinearGradient(0,0,0,H);
-    sky.addColorStop(0,"#2C1654");sky.addColorStop(0.08,"#3D2068");
-    sky.addColorStop(0.15,"#4A6741");sky.addColorStop(0.20,"#5B8B3E");
-    sky.addColorStop(0.30,"#4E7A35");sky.addColorStop(0.50,"#3D6628");
-    sky.addColorStop(0.70,"#4E7A35");sky.addColorStop(0.80,"#5B8B3E");
-    sky.addColorStop(0.85,"#4A6741");sky.addColorStop(0.92,"#3D2068");
-    sky.addColorStop(1,"#2C1654");
-    b.fillStyle=sky;b.fillRect(0,0,W,H);
-
-    // ─── Grass texture ───
-    for(var gi=0;gi<300;gi++){
-      var gx=Math.random()*W,gy=H*0.18+Math.random()*H*0.64;
-      b.fillStyle="rgba("+(60+Math.random()*30)+","+(100+Math.random()*40)+","+(40+Math.random()*20)+",0.3)";
-      b.fillRect(gx,gy,3+Math.random()*4,2+Math.random()*3);
-    }
-
-    // ─── Grass tufts ───
-    for(var ti=0;ti<80;ti++){
-      var tx=Math.random()*W,ty=H*0.2+Math.random()*H*0.6;
-      b.strokeStyle="rgba("+(50+Math.random()*40)+","+(110+Math.random()*50)+","+(30+Math.random()*20)+",0.6)";
-      b.lineWidth=1;
-      b.beginPath();b.moveTo(tx,ty);b.lineTo(tx-2+Math.random()*4,ty-4-Math.random()*5);b.stroke();
-      b.beginPath();b.moveTo(tx+2,ty);b.lineTo(tx+Math.random()*4,ty-3-Math.random()*5);b.stroke();
-    }
-
-    // ─── SINUOUS PATH (draw between waypoints) ───
-    if(PATH.length>1){
-      // Path shadow
-      b.strokeStyle="rgba(0,0,0,0.2)";b.lineWidth=28;b.lineCap="round";b.lineJoin="round";
-      b.beginPath();b.moveTo(PATH[0].x+2,PATH[0].y+2);
-      for(var i=1;i<PATH.length;i++)b.lineTo(PATH[i].x+2,PATH[i].y+2);
-      b.stroke();
-      // Path base (dark dirt)
-      b.strokeStyle="#5A4425";b.lineWidth=24;
-      b.beginPath();b.moveTo(PATH[0].x,PATH[0].y);
-      for(var i=1;i<PATH.length;i++)b.lineTo(PATH[i].x,PATH[i].y);
-      b.stroke();
-      // Path surface (lighter dirt)
-      b.strokeStyle="#7A6344";b.lineWidth=18;
-      b.beginPath();b.moveTo(PATH[0].x,PATH[0].y);
-      for(var i=1;i<PATH.length;i++)b.lineTo(PATH[i].x,PATH[i].y);
-      b.stroke();
-      // Path center highlight
-      b.strokeStyle="#8B7350";b.lineWidth=10;
-      b.beginPath();b.moveTo(PATH[0].x,PATH[0].y);
-      for(var i=1;i<PATH.length;i++)b.lineTo(PATH[i].x,PATH[i].y);
-      b.stroke();
-      // Path texture dots
-      for(var pi=0;pi<120;pi++){
-        var t2=Math.random();var pp=pathPos(t2);
-        b.fillStyle="rgba(90,65,40,"+(0.2+Math.random()*0.3)+")";
-        b.beginPath();b.arc(pp.x+(Math.random()-0.5)*12,pp.y+(Math.random()-0.5)*12,1+Math.random()*2,0,Math.PI*2);b.fill();
-      }
-      // Path border stones
-      b.strokeStyle="#4A3A25";b.lineWidth=2;
-      for(var pi=0;pi<PATH.length-1;pi++){
-        var dx=PATH[pi+1].x-PATH[pi].x,dy=PATH[pi+1].y-PATH[pi].y;
-        var len=Math.sqrt(dx*dx+dy*dy)||1;
-        var nx=-dy/len*13,ny=dx/len*13;
-        // Left edge stones
-        for(var s=0;s<1;s+=0.15){
-          var px=PATH[pi].x+dx*s+nx,py=PATH[pi].y+dy*s+ny;
-          b.fillStyle="#6A5A3A";b.beginPath();b.arc(px,py,2+Math.random()*1.5,0,Math.PI*2);b.fill();b.stroke();
-        }
-        // Right edge stones
-        for(var s=0;s<1;s+=0.15){
-          var px=PATH[pi].x+dx*s-nx,py=PATH[pi].y+dy*s-ny;
-          b.fillStyle="#6A5A3A";b.beginPath();b.arc(px,py,2+Math.random()*1.5,0,Math.PI*2);b.fill();b.stroke();
+    // ─── Draw tiles ───
+    for(var r=0;r<GRID_ROWS;r++){
+      for(var c=0;c<GRID_COLS;c++){
+        var tx=c*ts,ty=r*ts;
+        var cell=MAP[r]?MAP[r][c]:0;
+        if(cell===1){
+          // Road tile
+          b.fillStyle="#6B553A";b.fillRect(tx,ty,ts,ts);
+          b.fillStyle="#7A6344";b.fillRect(tx+1,ty+1,ts-2,ts-2);
+          // Road texture
+          b.fillStyle="rgba(90,70,45,0.4)";
+          for(var d=0;d<3;d++){b.fillRect(tx+3+Math.random()*(ts-6),ty+3+Math.random()*(ts-6),2,2);}
+          // Grid line (subtle)
+          b.strokeStyle="rgba(80,60,35,0.3)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
+        } else if(cell===2||cell===3){
+          // Tower spot tile — grass with stone circle
+          var isP1=cell===2;
+          var isTopH=r<GRID_ROWS/2;
+          b.fillStyle=isTopH?"#4E7A35":"#3D6628";
+          b.fillRect(tx,ty,ts,ts);
+          // Variation same as grass
+          b.fillStyle="rgba("+(50+((r+c)%3)*10)+","+(90+((r*3+c)%5)*8)+","+(30+((r+c*2)%4)*5)+",0.3)";
+          b.fillRect(tx,ty,ts,ts);
+          // Stone circle base
+          var cx2=tx+ts/2, cy2=ty+ts/2, rad=ts*0.38;
+          b.fillStyle="#6A6A68";
+          b.beginPath();b.arc(cx2,cy2,rad+1,0,Math.PI*2);b.fill();
+          b.fillStyle="#888884";
+          b.beginPath();b.arc(cx2,cy2,rad,0,Math.PI*2);b.fill();
+          // Team color ring
+          b.strokeStyle=isP1?"rgba(34,102,187,0.6)":"rgba(187,51,51,0.6)";
+          b.lineWidth=2;
+          b.beginPath();b.arc(cx2,cy2,rad-1,0,Math.PI*2);b.stroke();
+          // Center dot
+          b.fillStyle=isP1?"rgba(34,102,187,0.3)":"rgba(187,51,51,0.3)";
+          b.beginPath();b.arc(cx2,cy2,3,0,Math.PI*2);b.fill();
+          // Grid line
+          b.strokeStyle="rgba(40,60,25,0.15)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
+        } else {
+          // Grass tile
+          var brightness=((r*7+c*13)%5)*3;
+          var g1="#"+(60+brightness).toString(16)+(100+brightness).toString(16)+(35+brightness).toString(16);
+          var isTopHalf=r<GRID_ROWS/2;
+          b.fillStyle=isTopHalf?"#4E7A35":"#3D6628";
+          b.fillRect(tx,ty,ts,ts);
+          // Variation
+          b.fillStyle="rgba("+(50+((r+c)%3)*10)+","+(90+((r*3+c)%5)*8)+","+(30+((r+c*2)%4)*5)+",0.3)";
+          b.fillRect(tx,ty,ts,ts);
+          // Subtle grass tuft
+          if((r*11+c*7)%8===0){
+            b.strokeStyle="rgba(60,120,40,0.5)";b.lineWidth=1;
+            b.beginPath();b.moveTo(tx+ts/2,ty+ts/2);b.lineTo(tx+ts/2+2,ty+ts/2-4);b.stroke();
+            b.beginPath();b.moveTo(tx+ts/2+3,ty+ts/2);b.lineTo(tx+ts/2+5,ty+ts/2-3);b.stroke();
+          }
+          // Grid line (very subtle on grass)
+          b.strokeStyle="rgba(40,60,25,0.15)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
         }
       }
     }
 
-    // ─── River at center ───
-    b.fillStyle="#1A5C8A";b.fillRect(0,H/2-6,W,12);
-    var rGrd=b.createLinearGradient(0,H/2-6,0,H/2+6);
+    // ─── River at center row ───
+    var midRow=Math.floor(GRID_ROWS/2);
+    var ry=midRow*ts;
+    // Check if path crosses this row — draw bridge there
+    var bridgeCols={};
+    if(MAP[midRow]){for(var c=0;c<GRID_COLS;c++){if(MAP[midRow][c]===1)bridgeCols[c]=true;}}
+    // River water
+    b.fillStyle="#1A5C8A";b.fillRect(0,ry,W,ts);
+    var rGrd=b.createLinearGradient(0,ry,0,ry+ts);
     rGrd.addColorStop(0,"#2A7CB8");rGrd.addColorStop(0.3,"#3A9CD8");
     rGrd.addColorStop(0.5,"#4AACEE");rGrd.addColorStop(0.7,"#3A9CD8");
     rGrd.addColorStop(1,"#2A7CB8");
-    b.fillStyle=rGrd;b.fillRect(0,H/2-5,W,10);
-    b.fillStyle="#4A6030";b.fillRect(0,H/2-8,W,3);b.fillRect(0,H/2+5,W,3);
-
-    // ─── Bridge (where path crosses river) ───
-    var bridgeX=PATH.length>4?PATH[4].x:W/2;
-    b.fillStyle="#5A4025";b.fillRect(bridgeX-20,H/2-10,40,20);
-    b.fillStyle="#7A6344";b.fillRect(bridgeX-18,H/2-8,36,16);
-    b.fillStyle="#6B553A";
-    for(var pl=0;pl<4;pl++){b.fillRect(bridgeX-18,H/2-8+pl*4,36,1);}
-    b.fillStyle="#4A3520";
-    b.fillRect(bridgeX-20,H/2-10,3,20);b.fillRect(bridgeX+17,H/2-10,3,20);
-    b.fillRect(bridgeX-20,H/2-14,3,6);b.fillRect(bridgeX+17,H/2-14,3,6);
-
-    // ─── TOWER SPOTS (stone bases) ───
-    for(var si=0;si<TOWER_SPOTS.length;si++){
-      var sp=TOWER_SPOTS[si];
-      // Stone platform
-      b.fillStyle="#555";
-      b.beginPath();b.arc(sp.x,sp.y,12,0,Math.PI*2);b.fill();
-      b.strokeStyle="#444";b.lineWidth=2;b.stroke();
-      // Inner circle
-      b.fillStyle="#666";
-      b.beginPath();b.arc(sp.x,sp.y,8,0,Math.PI*2);b.fill();
-      // Side indicator
-      b.fillStyle=sp.side===1?"rgba(34,102,187,0.3)":"rgba(187,51,51,0.3)";
-      b.beginPath();b.arc(sp.x,sp.y,10,0,Math.PI*2);b.fill();
+    b.fillStyle=rGrd;b.fillRect(0,ry+1,W,ts-2);
+    // River banks
+    b.fillStyle="#4A6030";b.fillRect(0,ry-2,W,3);b.fillRect(0,ry+ts-1,W,3);
+    // Bridge tiles over river
+    for(var bc in bridgeCols){
+      var bx=parseInt(bc)*ts;
+      b.fillStyle="#5A4025";b.fillRect(bx,ry-2,ts,ts+4);
+      b.fillStyle="#7A6344";b.fillRect(bx+2,ry,ts-4,ts);
+      // Planks
+      b.fillStyle="#6B553A";
+      for(var pl=0;pl<3;pl++){b.fillRect(bx+2,ry+pl*(ts/3),ts-4,1);}
+      // Rails
+      b.fillStyle="#4A3520";
+      b.fillRect(bx,ry-2,2,ts+4);b.fillRect(bx+ts-2,ry-2,2,ts+4);
     }
 
-    // ─── Trees (avoid path) ───
-    var treePos=[];
-    for(var ti2=0;ti2<8;ti2++){
-      var tx2,ty2,tries=0,ok=false;
-      while(tries<20&&!ok){
-        tx2=10+Math.random()*(W-20);ty2=H*0.15+Math.random()*H*0.7;
-        ok=true;
-        // Check not too close to path
-        for(var pi=0;pi<10;pi++){
-          var pp=pathPos(pi/9);
-          if(Math.abs(pp.x-tx2)<35&&Math.abs(pp.y-ty2)<35){ok=false;break;}
-        }
-        // Check not too close to tower spots
-        for(var si=0;si<TOWER_SPOTS.length;si++){
-          if(Math.abs(TOWER_SPOTS[si].x-tx2)<25&&Math.abs(TOWER_SPOTS[si].y-ty2)<25){ok=false;break;}
-        }
-        tries++;
-      }
-      if(ok)treePos.push([tx2,ty2,10+Math.random()*6]);
+    // ─── Fill remaining area below/above grid ───
+    if(GRID_ROWS*ts<H){
+      b.fillStyle="#2C1654";b.fillRect(0,GRID_ROWS*ts,W,H-GRID_ROWS*ts);
     }
-    for(var ti3=0;ti3<treePos.length;ti3++){
-      drawTreeOn(b,treePos[ti3][0],treePos[ti3][1],treePos[ti3][2]);
-    }
-
-    // ─── Stars ───
-    b.fillStyle="#fff";
-    for(var si=0;si<30;si++){
-      var sx=(si*137+50)%W,sy;
-      if(si<15)sy=(si*89+5)%(Math.floor(H*0.14));
-      else sy=H*0.87+(si*67%Math.floor(H*0.12));
-      b.globalAlpha=0.15+Math.random()*0.35;
-      b.fillRect(sx,sy,1.5,1.5);
-    }
-    b.globalAlpha=1;
   }
 
   function drawTreeOn(b,x,y,s){
@@ -2392,11 +2605,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     // ─── CASTLES (vertical) ───
     if(clientFlip){
-      drawCastleV(fieldCenterX,castleTopY,"#d83b3b",S.p[1].hp,MAX_HP,opponentName,true);
-      drawCastleV(fieldCenterX,castleBotY-40,"#3b7dd8",S.p[2].hp,MAX_HP,playerName,false);
+      drawCastleV(castleX,castleTopY,"#d83b3b",S.p[1].hp,MAX_HP,opponentName,true);
+      drawCastleV(castleX,castleBotY-40,"#3b7dd8",S.p[2].hp,MAX_HP,playerName,false);
     } else {
-      drawCastleV(fieldCenterX,castleTopY,"#d83b3b",S.p[2].hp,MAX_HP,opponentName,true);
-      drawCastleV(fieldCenterX,castleBotY-40,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
+      drawCastleV(castleX,castleTopY,"#d83b3b",S.p[2].hp,MAX_HP,opponentName,true);
+      drawCastleV(castleX,castleBotY-40,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
     }
 
     // ─── CASTLE SHOOTING ───
@@ -2552,17 +2765,27 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     });
 
     // ─── DRAW TOWER SPOTS (highlight available when placing) ───
-    if(selectedTower){
-      for(var si=0;si<TOWER_SPOTS.length;si++){
-        var sp=TOWER_SPOTS[si];
-        if(sp.owner!==0||sp.side!==myPlayer)continue;
-        var spY=vY(sp.y);
+    // Highlight available tower spots for my side
+    for(var si=0;si<TOWER_SPOTS.length;si++){
+      var sp=TOWER_SPOTS[si];
+      if(sp.side!==myPlayer)continue;
+      var spY=vY(sp.y);
+      if(sp.owner===0){
+        // Pulse available spots
         ctx.save();
-        ctx.globalAlpha=0.4+Math.sin(now*0.006)*0.2;
-        ctx.strokeStyle="#44ff44";ctx.lineWidth=3;
-        ctx.beginPath();ctx.arc(sp.x,spY,14,0,Math.PI*2);ctx.stroke();
-        ctx.fillStyle="rgba(68,255,68,0.15)";
-        ctx.beginPath();ctx.arc(sp.x,spY,14,0,Math.PI*2);ctx.fill();
+        ctx.globalAlpha=0.2+Math.sin(now*0.004+si)*0.1;
+        ctx.strokeStyle="#88cc88";ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.35,0,Math.PI*2);ctx.stroke();
+        ctx.restore();
+      }
+      // Highlight selected spot
+      if(si===towerPopupSpot){
+        ctx.save();
+        ctx.globalAlpha=0.5+Math.sin(now*0.008)*0.2;
+        ctx.strokeStyle="#FFD54F";ctx.lineWidth=3;
+        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.4,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle="rgba(255,213,79,0.15)";
+        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.4,0,Math.PI*2);ctx.fill();
         ctx.restore();
       }
     }
