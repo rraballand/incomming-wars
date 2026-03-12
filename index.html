@@ -228,7 +228,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   <div class="mode-btns">
     <button class="btn-mode" id="btn-mode-create">Cr&#233;er une partie</button>
     <button class="btn-mode" id="btn-mode-join">Rejoindre</button>
-    <button class="btn-mode" id="btn-mode-ai">VS IA</button>
   </div>
   <div class="room-row" id="room-create-row">
     <div style="text-align:center">
@@ -396,7 +395,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var nextUnitIdx=0;
   var clientFlip=false;
   var selectedTower=null; // tower id when placing
-  var towerPopupSpot=-1; // index of spot with open popup
+  var towerPopupRow=-1,towerPopupCol=-1; // grid coords of open popup
   function vY(y){return clientFlip?H-y:y;}
 
   // ── Vertical layout positions ──
@@ -407,200 +406,112 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var fieldCenterX=0;
   var castleX=0;
 
-  // ── PATH & TOWER SPOTS ──
-  var PATH=[]; // waypoints [{x,y},...] from bottom castle to top castle
-  var TOWER_SPOTS=[]; // [{x,y,owner:0,tower:null,towerObj:null},...] owner: 0=none, 1=p1, 2=p2
+  // ── GRID & PATHFINDING ──
   var GRID_COLS=15,GRID_ROWS=0,TILE_SIZE=0;
-  var MAP=[]; // 2D grid: 0=grass, 1=road, 2=tower_p1, 3=tower_p2
+  var MAP=[]; // 2D grid: 0=grass, 1=river, 2=bridge, 3=castle_p1, 4=castle_p2, 5=tower_p1, 6=tower_p2
+  var cachedPaths={1:null,2:null};
+  var pathVersion=0;
+  var botCastleRow=0,botCastleCol=0,topCastleRow=0,topCastleCol=0;
+  var midRow=0;
+  var BRIDGE_COLS=[];
 
-  function buildPath(){
-    // ─── Grid setup ───
+  function initGrid(){
     TILE_SIZE=Math.floor(W/GRID_COLS);
     GRID_ROWS=Math.floor(H/TILE_SIZE);
-    var midRow=Math.floor(GRID_ROWS/2);
-
+    midRow=Math.floor(GRID_ROWS/2);
     // Init grid as all grass
     MAP=[];
     for(var r=0;r<GRID_ROWS;r++){MAP[r]=[];for(var c=0;c<GRID_COLS;c++)MAP[r][c]=0;}
-
-    // ─── Build symmetric square-wave path ───
-    var castleCol=Math.floor(GRID_COLS/2);
-    var topRow=1;
-    var botRow=GRID_ROWS-2;
-    var leftCol=1;
-    var rightCol=GRID_COLS-2;
-
-    // Build bottom half path (from castle to river)
-    var halfCells=[];
-    // Spacing=2 means 1 grass row between horizontal roads
-    var spacing=2;
-    var numLevels=Math.max(1,Math.floor(Math.abs(botRow-midRow-1)/spacing));
-
-    var curRow=botRow,curCol=castleCol;
-    halfCells.push([curRow,curCol]);
-    var goLeft=true;
-    for(var lv=0;lv<numLevels;lv++){
-      var targetCol=goLeft?leftCol:rightCol;
-      var nextRow=botRow-((lv+1)*spacing);
-      if(nextRow<=midRow+1)nextRow=midRow+1;
-      var step=targetCol>curCol?1:-1;
-      while(curCol!==targetCol){curCol+=step;halfCells.push([curRow,curCol]);}
-      while(curRow>nextRow){curRow--;halfCells.push([curRow,curCol]);}
-      goLeft=!goLeft;
-    }
-    // Go to center column and reach river
-    var step2=castleCol>curCol?1:-1;
-    if(step2===0)step2=1;
-    while(curCol!==castleCol){curCol+=step2;halfCells.push([curRow,curCol]);}
-    while(curRow>midRow+1){curRow--;halfCells.push([curRow,curCol]);}
-    // Bridge cell
-    halfCells.push([midRow,castleCol]);
-
-    // Mirror bottom half to create top half
-    var topCells=[];
-    for(var i=halfCells.length-1;i>=0;i--){
-      var mirrorRow=midRow-(halfCells[i][0]-midRow);
-      var mirrorCol=halfCells[i][1];
-      topCells.push([mirrorRow,mirrorCol]);
-    }
-
-    // Connect bottom castle (right corner) to path start (center)
-    var realCastleCol=GRID_COLS-2;
-    var botConnect=[];
-    for(var c=realCastleCol;c>castleCol;c--){botConnect.push([botRow,c]);}
-    // Connect top path end (center) to top castle (right corner)
-    var topConnect=[];
-    for(var c=castleCol+1;c<=realCastleCol;c++){topConnect.push([topRow,c]);}
-
-    // Full path: bot castle → center zigzag → top castle
-    var pathCells=botConnect.concat(halfCells);
-    for(var i=1;i<topCells.length;i++){pathCells.push(topCells[i]);}
-    for(var i=0;i<topConnect.length;i++){pathCells.push(topConnect[i]);}
-
-    // Mark road on grid
-    for(var i=0;i<pathCells.length;i++){
-      var pr=pathCells[i][0],pc=pathCells[i][1];
-      if(pr>=0&&pr<GRID_ROWS&&pc>=0&&pc<GRID_COLS)MAP[pr][pc]=1;
-    }
-
-    // ─── Tower spots: selective placement along horizontal segments ───
-    TOWER_SPOTS=[];
-    var spotInterval=2;
-    for(var i=1;i<pathCells.length;i++){
-      var prev=pathCells[i-1],cur=pathCells[i];
-      if(cur[0]!==prev[0])continue; // only horizontal
-      var r=cur[0];var c=cur[1];
-      if(r<=topRow+1||r>=botRow-1)continue;
-      if(r===midRow)continue; // skip river
-      if(c<2||c>=GRID_COLS-2)continue;
-      if(i%spotInterval!==0)continue;
-      // Place above or below road
-      var spotR=-1;
-      if(r>midRow){
-        if(r+1<GRID_ROWS&&MAP[r+1][c]===0)spotR=r+1;
-        else if(r-1>=0&&MAP[r-1][c]===0)spotR=r-1;
-      } else {
-        if(r-1>=0&&MAP[r-1][c]===0)spotR=r-1;
-        else if(r+1<GRID_ROWS&&MAP[r+1][c]===0)spotR=r+1;
-      }
-      if(spotR<0||MAP[spotR][c]!==0)continue;
-      var side=spotR>=midRow?1:2;
-      MAP[spotR][c]=side===1?2:3;
-      var sx=c*TILE_SIZE+TILE_SIZE/2, sy=spotR*TILE_SIZE+TILE_SIZE/2;
-      TOWER_SPOTS.push({x:sx,y:sy,owner:0,side:side,tower:null,towerObj:null,gr:spotR,gc:c});
-    }
-
-    // ─── PATH waypoints (direction changes only) ───
-    PATH=[];
-    PATH.push({x:pathCells[0][1]*TILE_SIZE+TILE_SIZE/2, y:pathCells[0][0]*TILE_SIZE+TILE_SIZE/2});
-    for(var i=1;i<pathCells.length-1;i++){
-      var prev=pathCells[i-1],cur=pathCells[i],next=pathCells[i+1];
-      var dr1=cur[0]-prev[0],dc1=cur[1]-prev[1];
-      var dr2=next[0]-cur[0],dc2=next[1]-cur[1];
-      if(dr1!==dr2||dc1!==dc2){
-        PATH.push({x:cur[1]*TILE_SIZE+TILE_SIZE/2, y:cur[0]*TILE_SIZE+TILE_SIZE/2});
-      }
-    }
-    var last=pathCells[pathCells.length-1];
-    PATH.push({x:last[1]*TILE_SIZE+TILE_SIZE/2, y:last[0]*TILE_SIZE+TILE_SIZE/2});
-
-    // Update castle positions
-    castleBotY=botRow*TILE_SIZE+TILE_SIZE/2;
-    castleTopY=topRow*TILE_SIZE+TILE_SIZE/2;
-    castleX=(GRID_COLS-2)*TILE_SIZE+TILE_SIZE/2;
+    // River
+    for(var c=0;c<GRID_COLS;c++)MAP[midRow][c]=1;
+    // Bridge (3 columns centered)
+    var bridgeCenter=Math.floor(GRID_COLS/2);
+    BRIDGE_COLS=[bridgeCenter-1,bridgeCenter,bridgeCenter+1];
+    for(var i=0;i<BRIDGE_COLS.length;i++){MAP[midRow][BRIDGE_COLS[i]]=2;}
+    // Castles
+    topCastleRow=1; topCastleCol=GRID_COLS-2;
+    botCastleRow=GRID_ROWS-2; botCastleCol=GRID_COLS-2;
+    MAP[topCastleRow][topCastleCol]=4;
+    MAP[botCastleRow][botCastleCol]=3;
+    // Castle positions in pixels
+    castleBotY=botCastleRow*TILE_SIZE+TILE_SIZE/2;
+    castleTopY=topCastleRow*TILE_SIZE+TILE_SIZE/2;
+    castleX=topCastleCol*TILE_SIZE+TILE_SIZE/2;
     CASTLE_HIT_TOP=castleTopY+TILE_SIZE;
     CASTLE_HIT_BOT=castleBotY-TILE_SIZE;
+    recalcPaths();
   }
 
-  // Position ad overlay on grid cells (right side, near river)
+  // ── A* PATHFINDING ──
+  // Binary min-heap for A*
+  function MinHeap(){this.data=[];}
+  MinHeap.prototype.push=function(n){this.data.push(n);this._up(this.data.length-1);};
+  MinHeap.prototype.pop=function(){var top=this.data[0],last=this.data.pop();if(this.data.length>0){this.data[0]=last;this._down(0);}return top;};
+  MinHeap.prototype.size=function(){return this.data.length;};
+  MinHeap.prototype._up=function(i){while(i>0){var p=Math.floor((i-1)/2);if(this.data[p].f<=this.data[i].f)break;var tmp=this.data[p];this.data[p]=this.data[i];this.data[i]=tmp;i=p;}};
+  MinHeap.prototype._down=function(i){var n=this.data.length;while(true){var l=2*i+1,r=2*i+2,best=i;if(l<n&&this.data[l].f<this.data[best].f)best=l;if(r<n&&this.data[r].f<this.data[best].f)best=r;if(best===i)break;var tmp=this.data[best];this.data[best]=this.data[i];this.data[i]=tmp;i=best;}};
+
+  function astar(sr,sc,er,ec){
+    if(sr===er&&sc===ec)return[[sr,sc]];
+    var rows=GRID_ROWS,cols=GRID_COLS;
+    // gScore: 2D array initialized to Infinity
+    var g=[],came=[];
+    for(var r=0;r<rows;r++){g[r]=[];came[r]=[];for(var c=0;c<cols;c++){g[r][c]=999999;came[r][c]=null;}}
+    g[sr][sc]=0;
+    var open=new MinHeap();
+    open.push({r:sr,c:sc,f:Math.abs(er-sr)+Math.abs(ec-sc)});
+    var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+    while(open.size()>0){
+      var cur=open.pop();
+      if(cur.r===er&&cur.c===ec){
+        // Reconstruct path
+        var path=[];var cr=er,cc=ec;
+        while(cr!==sr||cc!==sc){path.push([cr,cc]);var p=came[cr][cc];cr=p[0];cc=p[1];}
+        path.push([sr,sc]);path.reverse();return path;
+      }
+      var cg=g[cur.r][cur.c];
+      for(var d=0;d<4;d++){
+        var nr=cur.r+dirs[d][0],nc=cur.c+dirs[d][1];
+        if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
+        var cell=MAP[nr][nc];
+        // Walkable: grass(0), bridge(2), destination castle
+        if(cell!==0&&cell!==2){
+          if(nr===er&&nc===ec&&(cell===3||cell===4)){/* castle dest is ok */}
+          else continue;
+        }
+        var ng=cg+1;
+        if(ng<g[nr][nc]){
+          g[nr][nc]=ng;came[nr][nc]=[cur.r,cur.c];
+          var h=Math.abs(er-nr)+Math.abs(ec-nc);
+          open.push({r:nr,c:nc,f:ng+h});
+        }
+      }
+    }
+    return null; // no path
+  }
+
+  function recalcPaths(){
+    pathVersion++;
+    // P1: bottom castle → top castle
+    cachedPaths[1]=astar(botCastleRow,botCastleCol,topCastleRow,topCastleCol);
+    // P2: top castle → bottom castle
+    cachedPaths[2]=astar(topCastleRow,topCastleCol,botCastleRow,botCastleCol);
+  }
+
+  // Position ad overlay (simplified — right side above river)
   function positionAd(){
     if(!MAP||!MAP.length)return;
     var ad=E("ad-overlay");if(!ad)return;
-    var midRow=Math.floor(GRID_ROWS/2);
-    // Find largest grass rectangle on the right side, above the river
-    var bestR=-1,bestC=-1,bestW=0,bestH=0;
-    for(var startR=2;startR<midRow-1;startR++){
-      for(var startC=Math.floor(GRID_COLS/2)+1;startC<GRID_COLS;startC++){
-        if(MAP[startR][startC]!==0)continue;
-        var maxW=0;
-        for(var c=startC;c<GRID_COLS;c++){
-          if(MAP[startR][c]!==0)break;
-          maxW++;
-        }
-        var h=0;
-        outer:for(var r=startR;r<midRow-1&&r<startR+6;r++){
-          for(var c=startC;c<startC+maxW;c++){
-            if(MAP[r][c]!==0){break outer;}
-          }
-          h++;
-        }
-        if(maxW*h>bestW*bestH){bestR=startR;bestC=startC;bestW=maxW;bestH=h;}
-      }
-    }
-    if(bestR<0||bestW<2||bestH<2)return;
-    // Adjust: 1 row down, 1 col narrower on each side
-    bestR+=1; bestC+=1; bestW-=2; bestH+=3;
-    if(bestW<1||bestH<1)return;
+    // Find grass area on right side above river
+    var bestR=2,bestC=Math.floor(GRID_COLS/2)+2;
+    var bestW=GRID_COLS-bestC-1,bestH=Math.min(4,midRow-bestR-1);
+    if(bestW<2||bestH<2){ad.style.display="none";return;}
     var rect=canvas.getBoundingClientRect();
-    // Exact tile size in DOM pixels (canvas TILE_SIZE scaled to DOM)
     var tw=TILE_SIZE*(rect.width/W), th=TILE_SIZE*(rect.height/H);
-    var x1=Math.round(bestC*tw);
-    var y1=Math.round(bestR*th);
-    var x2=Math.round((bestC+bestW)*tw);
-    var y2=Math.round((bestR+bestH)*th);
-    ad.style.left=x1+"px";
-    ad.style.top=y1+"px";
-    ad.style.width=(x2-x1)+"px";
-    ad.style.height=(y2-y1)+"px";
-  }
-
-  // Get position along path at fraction t (0=bottom, 1=top)
-  function pathPos(t){
-    if(t<=0)return{x:PATH[0].x,y:PATH[0].y};
-    if(t>=1)return{x:PATH[PATH.length-1].x,y:PATH[PATH.length-1].y};
-    var totalLen=0,segLens=[];
-    for(var i=0;i<PATH.length-1;i++){
-      var dx=PATH[i+1].x-PATH[i].x,dy=PATH[i+1].y-PATH[i].y;
-      var l=Math.sqrt(dx*dx+dy*dy);segLens.push(l);totalLen+=l;
-    }
-    var targetDist=t*totalLen,acc=0;
-    for(var i=0;i<segLens.length;i++){
-      if(acc+segLens[i]>=targetDist){
-        var segT=(targetDist-acc)/segLens[i];
-        return{x:PATH[i].x+(PATH[i+1].x-PATH[i].x)*segT,y:PATH[i].y+(PATH[i+1].y-PATH[i].y)*segT};
-      }
-      acc+=segLens[i];
-    }
-    return{x:PATH[PATH.length-1].x,y:PATH[PATH.length-1].y};
-  }
-
-  function pathTotalLength(){
-    var total=0;
-    for(var i=0;i<PATH.length-1;i++){
-      var dx=PATH[i+1].x-PATH[i].x,dy=PATH[i+1].y-PATH[i].y;
-      total+=Math.sqrt(dx*dx+dy*dy);
-    }
-    return total;
+    ad.style.left=Math.round(bestC*tw)+"px";
+    ad.style.top=Math.round(bestR*th)+"px";
+    ad.style.width=Math.round(bestW*tw)+"px";
+    ad.style.height=Math.round(bestH*th)+"px";
   }
 
   // ── Multiplayer state ──
@@ -647,9 +558,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   });
 
   // Mode buttons
-  var selectedMode="ai";
-  E("btn-mode-ai").classList.add("active");
-  E("btn-mode-ai").addEventListener("click",function(){selectMode("ai");});
+  var selectedMode="create";
   E("btn-mode-create").addEventListener("click",function(){selectMode("create");});
   E("btn-mode-join").addEventListener("click",function(){selectMode("join");});
   // Disable multiplayer buttons if PeerJS not loaded
@@ -660,7 +569,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
   function selectMode(mode){
     selectedMode=mode;
-    E("btn-mode-ai").classList.toggle("active",mode==="ai");
     E("btn-mode-create").classList.toggle("active",mode==="create");
     E("btn-mode-join").classList.toggle("active",mode==="join");
     E("room-create-row").className="room-row"+(mode==="create"?" show":"");
@@ -670,6 +578,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       E("room-code-display").textContent=code;
     }
   }
+  selectMode("create");
 
   // Auto-join from URL ?room=CODE
   (function(){
@@ -693,10 +602,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(!pseudo)pseudo="Joueur"+Math.floor(Math.random()*999+1);
     playerName=pseudo;
 
-    if(selectedMode==="ai"){
-      gameMode="ai";myPlayer=1;
-      startMatchmakingAI();
-    } else if(selectedMode==="create"){
+    if(selectedMode==="create"){
       gameMode="host";myPlayer=1;
       var code=E("room-code-display").textContent;
       startMatchmakingMulti(code,true);
@@ -933,7 +839,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   // ── Real multiplayer matchmaking ──
   function startMatchmakingMulti(code,isHost){
     if(!peerAvailable){
-      alert("PeerJS n'a pas pu charger. Le mode multijoueur n'est pas disponible. Lancez en VS IA.");
+      alert("PeerJS n'a pas pu charger. Le mode multijoueur n'est pas disponible. Utilisez Quick Match.");
       return;
     }
     E("start-screen").classList.remove("active");
@@ -1040,7 +946,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
     else if(data.type==="placeTower"){
       var who=(gameMode==="host")?2:1;
-      placeTower(who,data.towerId,data.spotIdx);
+      placeTower(who,data.towerId,data.gridRow,data.gridCol);
     }
     else if(data.type==="apocalypse"){
       var who=(gameMode==="host")?2:1;
@@ -1048,7 +954,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
     else if(data.type==="sellTower"){
       var who=(gameMode==="host")?2:1;
-      sellTower(who,data.spotIdx);
+      sellTower(who,data.gridRow,data.gridCol);
     }
     else if(data.type==="unlock"){
       var who=(gameMode==="host")?2:1;
@@ -1124,32 +1030,31 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
     canvas=E("battle-canvas");ctx=canvas.getContext("2d");
     szCanvas();
-    buildPath();
+    initGrid();
     positionAd();
-    // Canvas click handler for tower placement
-    canvas.addEventListener("click",function(ev){
-      var rect=canvas.getBoundingClientRect();
-      // Scale DOM coords to canvas coords
-      var scaleX=W/rect.width, scaleY=H/rect.height;
-      var cx=(ev.clientX-rect.left)*scaleX;
-      var cy=(ev.clientY-rect.top)*scaleY;
-      if(clientFlip)cy=H-cy;
-      // Find closest spot on my side
-      var bestIdx=-1,bestDist=9999;
-      for(var i=0;i<TOWER_SPOTS.length;i++){
-        var s=TOWER_SPOTS[i];
-        if(s.side!==myPlayer)continue;
-        var dx=s.x-cx,dy=s.y-cy;
-        var d=Math.sqrt(dx*dx+dy*dy);
-        if(d<TILE_SIZE*0.7&&d<bestDist){bestDist=d;bestIdx=i;}
-      }
-      if(bestIdx>=0){
-        openTowerPopup(bestIdx,rect);
-      } else {
-        closeTowerPopup();
-      }
-    });
-    window.addEventListener("resize",szCanvas);
+    // Canvas click handler — only add once
+    if(!canvas._gridClickBound){
+      canvas._gridClickBound=true;
+      canvas.addEventListener("click",function(ev){
+        if(!S.running)return;
+        var rect=canvas.getBoundingClientRect();
+        var scaleX=W/rect.width, scaleY=H/rect.height;
+        var cx=(ev.clientX-rect.left)*scaleX;
+        var cy=(ev.clientY-rect.top)*scaleY;
+        if(clientFlip)cy=H-cy;
+        var gr=Math.floor(cy/TILE_SIZE);
+        var gc=Math.floor(cx/TILE_SIZE);
+        if(gr<0||gr>=GRID_ROWS||gc<0||gc>=GRID_COLS){closeTowerPopup();return;}
+        var cell=MAP[gr][gc];
+        var myTowCode=myPlayer===1?5:6;
+        if(cell===myTowCode){openTowerPopupAt(gr,gc,rect);return;}
+        if(cell!==0){closeTowerPopup();return;}
+        var mySide=myPlayer===1?(gr>midRow):(gr<midRow);
+        if(!mySide){closeTowerPopup();return;}
+        openTowerPopupAt(gr,gc,rect);
+      });
+    }
+    if(!window._resizeBound){window._resizeBound=true;window.addEventListener("resize",szCanvas);}
     S.running=true;S.gameTime=0;
     clientFlip=(gameMode==="client");
     buildBackground();
@@ -1160,8 +1065,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     aiTimer=lastTick;deployCD1=0;lastNetSync=0;
     liveUnits=[];liveTowers=[];particles=[];projectiles=[];shakes=[];floatingDmg=[];
     selectedTower=null;
-    // Reset tower spots
-    for(var si=0;si<TOWER_SPOTS.length;si++){TOWER_SPOTS[si].owner=0;TOWER_SPOTS[si].tower=null;TOWER_SPOTS[si].towerObj=null;}
+    // Reset MAP tower cells to grass
+    for(var r=0;r<GRID_ROWS;r++){for(var c=0;c<GRID_COLS;c++){if(MAP[r]&&(MAP[r][c]===5||MAP[r][c]===6))MAP[r][c]=0;}}
+    recalcPaths();
     nextUnitIdx=0;
     renderCardBar();
     updateUI();
@@ -1188,7 +1094,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     CASTLE_HIT_TOP=castleTopY+60;
     CASTLE_HIT_BOT=castleBotY-60;
     closeTowerPopup();
-    if(S.running){buildPath();positionAd();buildBackground();}
+    if(S.running){initGrid();positionAd();buildBackground();}
   }
 
   // ══════ CARD BAR ══════
@@ -1221,9 +1127,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
             color:Math.random()>0.3?"#ff4422":"#ffcc22"});
         }
         addFloat(t.x,vY(t.y),"BOOM","#ff4422");
-        if(typeof t.spotIdx==="number"){
-          var sp=TOWER_SPOTS[t.spotIdx];
-          if(sp){sp.owner=0;sp.tower=null;sp.towerObj=null;}
+        if(typeof t.gridRow==="number"&&typeof t.gridCol==="number"){
+          if(MAP[t.gridRow])MAP[t.gridRow][t.gridCol]=0;
         }
         liveTowers.splice(i,1);
       }
@@ -1239,6 +1144,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       }
       liveUnits.splice(i,1);
     }
+    recalcPaths();buildBackground();
     // Screen shake
     shakes.push({dx:0,dy:0,str:12,dur:0.8,t:0});
     // Visual feedback
@@ -1251,29 +1157,49 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   function closeTowerPopup(){
     var popup=E("tower-popup");
     popup.className="";popup.innerHTML="";
-    towerPopupSpot=-1;
+    towerPopupRow=-1;towerPopupCol=-1;
   }
 
-  function openTowerPopup(spotIdx,canvasRect){
-    var spot=TOWER_SPOTS[spotIdx];
+  function refreshTowerPopup(){
     var popup=E("tower-popup");
-    towerPopupSpot=spotIdx;
+    if(!popup.classList.contains("active"))return;
+    var items=popup.querySelectorAll(".tp-item");
+    var ul=S.p[myPlayer].unlocked;
+    var idx=0;
+    TOWERS.forEach(function(t){
+      if(idx>=items.length)return;
+      var d=items[idx];idx++;
+      var locked=t.unlockCost&&!ul[t.id];
+      var noGold=locked?(S.p[myPlayer].gold<t.unlockCost):(S.p[myPlayer].gold<t.cost);
+      d.className="tp-item"+(locked?" tp-locked"+(noGold?" off":""):(noGold?" off":""));
+    });
+  }
+
+  function openTowerPopupAt(gr,gc,canvasRect){
+    var popup=E("tower-popup");
+    towerPopupRow=gr;towerPopupCol=gc;
     popup.innerHTML="";
     var ul=S.p[myPlayer].unlocked;
+    var cell=MAP[gr][gc];
+    var myTowCode=myPlayer===1?5:6;
 
-    if(spot.owner!==0){
-      // Spot has a tower — show sell option
+    if(cell===myTowCode){
+      // Existing tower — show sell option
+      var tObj=null;
+      for(var i=0;i<liveTowers.length;i++){
+        if(liveTowers[i].gridRow===gr&&liveTowers[i].gridCol===gc&&liveTowers[i].alive){tObj=liveTowers[i];break;}
+      }
       var sell=document.createElement("div");
       sell.className="tp-sell";
-      var refund=Math.floor(spot.towerObj?spot.towerObj.cost*0.5:0);
+      var refund=Math.floor(tObj?tObj.cost*0.5:0);
       sell.innerHTML='<div class="tp-em">\u274C</div><div class="tp-cost">+'+refund+'<span class="gc"></span></div>';
       sell.addEventListener("click",function(){
-        sellTower(myPlayer,spotIdx);
+        sellTower(myPlayer,gr,gc);
         closeTowerPopup();
       });
       popup.appendChild(sell);
     } else {
-      // Show available towers
+      // Show available towers to build
       TOWERS.forEach(function(t){
         var locked=t.unlockCost&&!ul[t.id];
         var noGold=locked?(S.p[myPlayer].gold<t.unlockCost):(S.p[myPlayer].gold<t.cost);
@@ -1283,12 +1209,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
           d.innerHTML='<div class="tp-em">'+t.em+'</div><div class="tp-lock">\uD83D\uDD13 '+t.unlockCost+'<span class="gc"></span></div>';
           d.addEventListener("click",function(){
             unlockUnit(myPlayer,t.id);
-            if(S.p[myPlayer].unlocked[t.id])openTowerPopup(spotIdx,canvasRect);
+            if(S.p[myPlayer].unlocked[t.id])openTowerPopupAt(gr,gc,canvasRect);
           });
         } else {
           d.innerHTML='<div class="tp-em">'+t.em+'</div><div class="tp-cost"><span class="gc"></span>'+t.cost+'</div>';
           d.addEventListener("click",function(){
-            placeTower(myPlayer,t.id,spotIdx);
+            placeTower(myPlayer,t.id,gr,gc);
             closeTowerPopup();
           });
         }
@@ -1296,9 +1222,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       });
     }
 
-    // Position popup near the spot (relative to canvas)
+    // Position popup near the cell
     popup.className="active";
-    var sx=spot.x, sy=vY(spot.y);
+    var sx=gc*TILE_SIZE+TILE_SIZE/2;
+    var sy=clientFlip?(H-(gr*TILE_SIZE+TILE_SIZE/2)):(gr*TILE_SIZE+TILE_SIZE/2);
     var popW=popup.offsetWidth||200;
     var popH=popup.offsetHeight||50;
     var px=sx-popW/2;
@@ -1310,18 +1237,20 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     popup.style.top=py+"px";
   }
 
-  function sellTower(player,spotIdx){
-    var spot=TOWER_SPOTS[spotIdx];
-    if(!spot||spot.owner!==player)return;
-    var refund=Math.floor(spot.towerObj?spot.towerObj.cost*0.5:0);
-    S.p[player].gold+=refund;
-    // Remove from liveTowers
+  function sellTower(player,gr,gc){
+    var myTowCode=player===1?5:6;
+    if(!MAP[gr]||MAP[gr][gc]!==myTowCode)return;
+    // Find tower object at this cell
+    var tObj=null;
     for(var i=liveTowers.length-1;i>=0;i--){
-      if(liveTowers[i].spotIdx===spotIdx){liveTowers.splice(i,1);break;}
+      if(liveTowers[i].gridRow===gr&&liveTowers[i].gridCol===gc){tObj=liveTowers[i];liveTowers.splice(i,1);break;}
     }
-    spot.owner=0;spot.tower=null;spot.towerObj=null;
+    var refund=Math.floor(tObj?tObj.cost*0.5:0);
+    S.p[player].gold+=refund;
+    MAP[gr][gc]=0;
+    recalcPaths();buildBackground();
     if(player===myPlayer){gf("+"+refund);updateUI();}
-    if(isHost&&gameMode!=="solo")netSend({type:"sellTower",spotIdx:spotIdx});
+    if(isHost&&gameMode!=="solo")netSend({type:"sellTower",gridRow:gr,gridCol:gc});
   }
 
   function renderCardBar(){
@@ -1403,28 +1332,33 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       spawnTime:performance.now(),
       atkSpd:tpl.atkSpd||800,range:tpl.range||0,
       fly:!!tpl.fly,siege:!!tpl.siege,splash:tpl.splash||0,
-      x:0,y:0,pathT:0,dir:player===1?1:-1,
+      x:0,y:0,
       alive:true,opacity:1,scale:1,state:"march",type:"a",player:player,
-      attackTimer:0,fightTarget:null,bounceStart:0,deathStart:0,idx:nextUnitIdx++};
-    // Player 1: start at pathT=0 (bottom), move toward pathT=1 (top)
-    // Player 2: start at pathT=1 (top), move toward pathT=0 (bottom)
-    u.pathT=player===1?0:1;
-    var pos=pathPos(u.pathT);
-    u.x=pos.x+(Math.random()-0.5)*12;
-    u.y=pos.y+(Math.random()-0.5)*8;
+      attackTimer:0,fightTarget:null,bounceStart:0,deathStart:0,idx:nextUnitIdx++,
+      // A* pathfinding
+      path:null,pathIdx:0,pathVer:-1,blocked:false};
+    // Spawn at castle position
+    var spawnR=player===1?botCastleRow:topCastleRow;
+    var spawnC=player===1?botCastleCol:topCastleCol;
+    u.x=spawnC*TILE_SIZE+TILE_SIZE/2+(Math.random()-0.5)*12;
+    u.y=spawnR*TILE_SIZE+TILE_SIZE/2+(Math.random()-0.5)*8;
+    // Get initial path
+    u.path=cachedPaths[player]?cachedPaths[player].slice():null;
+    u.pathIdx=0;u.pathVer=pathVersion;
+    u.blocked=!u.path;
     return u;
   }
 
-  function createTowerObj(player,tpl,spot){
-    var t={id:tpl.id,em:tpl.em,name:tpl.name,
+  function createTowerObj(player,tpl,gr,gc){
+    var t={id:tpl.id,em:tpl.em,name:tpl.name,cost:tpl.cost,
       curHp:tpl.hp,maxHp:tpl.hp,
       effDmg:Math.floor(tpl.dmg*fm(player,"def")),
       atkSpd:tpl.atkSpd,range:Math.floor(tpl.range*fm(player,"range")),targets:tpl.targets,
       splash:tpl.splash,dot:tpl.dot,
-      x:spot.x,y:spot.y,
+      x:gc*TILE_SIZE+TILE_SIZE/2,y:gr*TILE_SIZE+TILE_SIZE/2,
       alive:true,state:"idle",player:player,
       attackTimer:0,fightTarget:null,bounceStart:0,deathStart:0,idx:nextUnitIdx++,
-      spotIdx:-1};
+      gridRow:gr,gridCol:gc};
     return t;
   }
 
@@ -1447,24 +1381,32 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
   }
 
-  function placeTower(player,towerId,spotIdx){
+  function placeTower(player,towerId,gr,gc){
     var tpl=find(TOWERS,towerId);
     if(!tpl||S.p[player].gold<tpl.cost)return false;
     if(tpl.unlockCost&&!S.p[player].unlocked[tpl.id])return false;
-    var spot=TOWER_SPOTS[spotIdx];
-    if(!spot||spot.owner!==0)return false;
-    // Check spot is on correct side
-    if(spot.side!==player)return false;
+    if(!MAP[gr]||MAP[gr][gc]!==0)return false;
+    // Check correct side of river
+    var mySide=player===1?(gr>midRow):(gr<midRow);
+    if(!mySide)return false;
+    // Temporarily place tower and check paths remain valid
+    var code=player===1?5:6;
+    MAP[gr][gc]=code;
+    var p1ok=astar(botCastleRow,botCastleCol,topCastleRow,topCastleCol);
+    var p2ok=astar(topCastleRow,topCastleCol,botCastleRow,botCastleCol);
+    if(!p1ok||!p2ok){
+      MAP[gr][gc]=0; // rollback — would block the path
+      if(player===myPlayer)gf("⛔");
+      return false;
+    }
     S.p[player].gold-=tpl.cost;
-    spot.owner=player;spot.tower=towerId;
-    var t=createTowerObj(player,tpl,spot);
-    t.spotIdx=spotIdx;
-    spot.towerObj=t;
+    var t=createTowerObj(player,tpl,gr,gc);
     liveTowers.push(t);
+    recalcPaths();buildBackground();
     if(player===myPlayer)gf("-"+tpl.cost);
     updateCardBar();updateUI();
     if(gameMode!=="ai"&&player===myPlayer){
-      netSend({type:"placeTower",towerId:towerId,spotIdx:spotIdx});
+      netSend({type:"placeTower",towerId:towerId,gridRow:gr,gridCol:gc});
     }
     return true;
   }
@@ -1516,6 +1458,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     var now=performance.now();
     var cdPct=Math.max(0,1-(deployCD1-now)/DEPLOY_CD);
     E("cd-fill").style.width=(cdPct>=1?0:cdPct*100)+"%";
+    // Refresh tower popup if open (gold may have changed)
+    if(towerPopupRow>=0&&towerPopupCol>=0){
+      refreshTowerPopup();
+    }
   }
 
   function gf(txt){
@@ -1561,19 +1507,36 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       return;
     }
 
-    // ─── TOWERS (build if under pressure or early game) ───
+    // ─── TOWERS (build adjacent to enemy path for maximum disruption) ───
     var underPressure=threats>myTowers+1;
     if((underPressure||myTowers<2)&&gold>=25){
-      var freeSpots=[];
-      for(var si=0;si<TOWER_SPOTS.length;si++){
-        if(TOWER_SPOTS[si].side===2&&TOWER_SPOTS[si].owner===0)freeSpots.push(si);
+      // Find free grass cells on AI side (top half, row < midRow)
+      var freeCells=[];
+      var enemyPath=cachedPaths[1]; // P1's path goes through AI side
+      for(var r=1;r<midRow;r++){
+        for(var c=0;c<GRID_COLS;c++){
+          if(MAP[r][c]===0)freeCells.push([r,c]);
+        }
       }
-      if(freeSpots.length>0){
+      // Prefer cells adjacent to enemy path for strategic placement
+      if(enemyPath&&freeCells.length>0){
+        var pathSet={};
+        for(var pi2=0;pi2<enemyPath.length;pi2++){pathSet[enemyPath[pi2][0]+","+enemyPath[pi2][1]]=true;}
+        var adjCells=freeCells.filter(function(cell){
+          var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+          for(var d=0;d<4;d++){
+            if(pathSet[(cell[0]+dirs[d][0])+","+(cell[1]+dirs[d][1])])return true;
+          }
+          return false;
+        });
+        if(adjCells.length>0)freeCells=adjCells;
+      }
+      if(freeCells.length>0){
         var towPool=TOWERS.filter(function(t){return gold>=t.cost&&aiUl[t.id];});
         if(towPool.length>0){
           var pick=towPool[Math.min(towPool.length-1,Math.floor(aggression*(towPool.length-0.5)+0.5))];
-          var spotIdx=freeSpots[Math.floor(Math.random()*freeSpots.length)];
-          if(pick)placeTower(2,pick.id,spotIdx);
+          var cell=freeCells[Math.floor(Math.random()*freeCells.length)];
+          if(pick)placeTower(2,pick.id,cell[0],cell[1]);
           return;
         }
       }
@@ -1655,6 +1618,18 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   }
 
   // Find closest enemy tower for siege units
+  // Find nearest tower (any side) that blocks path
+  function findBlockingTower(unit){
+    var best=null,bestDist=9999;
+    for(var i=0;i<liveTowers.length;i++){
+      var t=liveTowers[i];
+      if(!t.alive||t.player===unit.player)continue; // only attack ENEMY towers
+      var d=dist(unit,t);
+      if(d<bestDist){bestDist=d;best=t;}
+    }
+    return best;
+  }
+
   function findSiegeTarget(unit){
     var best=null,bestDist=9999;
     for(var i=0;i<liveTowers.length;i++){
@@ -1722,9 +1697,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     addFloat(t.x,t.y-30,"\uD83D\uDCA5","#ff4422");
     for(var pi=0;pi<12;pi++){particles.push({x:t.x+(Math.random()-0.5)*20,y:t.y+(Math.random()-0.5)*20,vx:(Math.random()-0.5)*5,vy:-Math.random()*5,life:1.2,maxLife:1.2,r:Math.random()*5+2,color:Math.random()>0.3?"#ff6622":"#ffcc22"});}
     shakes.push({start:now,dur:400,intensity:6});
-    // Free the spot
-    if(t.spotIdx>=0&&t.spotIdx<TOWER_SPOTS.length){
-      TOWER_SPOTS[t.spotIdx].owner=0;TOWER_SPOTS[t.spotIdx].tower=null;TOWER_SPOTS[t.spotIdx].towerObj=null;
+    // Free the grid cell
+    if(typeof t.gridRow==="number"&&typeof t.gridCol==="number"){
+      if(MAP[t.gridRow])MAP[t.gridRow][t.gridCol]=0;
+      recalcPaths();buildBackground();
     }
   }
 
@@ -2437,86 +2413,94 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         var tx=c*ts,ty=r*ts;
         var cell=MAP[r]?MAP[r][c]:0;
         if(cell===1){
-          // Road tile
-          b.fillStyle="#6B553A";b.fillRect(tx,ty,ts,ts);
-          b.fillStyle="#7A6344";b.fillRect(tx+1,ty+1,ts-2,ts-2);
-          // Road texture
-          b.fillStyle="rgba(90,70,45,0.4)";
-          for(var d=0;d<3;d++){b.fillRect(tx+3+Math.random()*(ts-6),ty+3+Math.random()*(ts-6),2,2);}
-          // Grid line (subtle)
-          b.strokeStyle="rgba(80,60,35,0.3)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
-        } else if(cell===2||cell===3){
-          // Tower spot tile — grass with stone circle
-          var isP1=cell===2;
+          // River tile — will be painted over by river section below
+          b.fillStyle="#1A5C8A";b.fillRect(tx,ty,ts,ts);
+        } else if(cell===2){
+          // Bridge tile — drawn in river section below
+          b.fillStyle="#5A4025";b.fillRect(tx,ty,ts,ts);
+        } else if(cell===3||cell===4){
+          // Castle tile
+          var isP1Castle=cell===3;
           var isTopH=r<GRID_ROWS/2;
           b.fillStyle=isTopH?"#4E7A35":"#3D6628";
           b.fillRect(tx,ty,ts,ts);
-          // Variation same as grass
           b.fillStyle="rgba("+(50+((r+c)%3)*10)+","+(90+((r*3+c)%5)*8)+","+(30+((r+c*2)%4)*5)+",0.3)";
           b.fillRect(tx,ty,ts,ts);
-          // Stone circle base
-          var cx2=tx+ts/2, cy2=ty+ts/2, rad=ts*0.38;
-          b.fillStyle="#6A6A68";
-          b.beginPath();b.arc(cx2,cy2,rad+1,0,Math.PI*2);b.fill();
-          b.fillStyle="#888884";
-          b.beginPath();b.arc(cx2,cy2,rad,0,Math.PI*2);b.fill();
-          // Team color ring
-          b.strokeStyle=isP1?"rgba(34,102,187,0.6)":"rgba(187,51,51,0.6)";
-          b.lineWidth=2;
-          b.beginPath();b.arc(cx2,cy2,rad-1,0,Math.PI*2);b.stroke();
-          // Center dot
-          b.fillStyle=isP1?"rgba(34,102,187,0.3)":"rgba(187,51,51,0.3)";
-          b.beginPath();b.arc(cx2,cy2,3,0,Math.PI*2);b.fill();
-          // Grid line
+          // Castle marker
+          var cx2=tx+ts/2,cy2=ty+ts/2;
+          b.fillStyle=isP1Castle?"rgba(34,102,187,0.3)":"rgba(187,51,51,0.3)";
+          b.beginPath();b.arc(cx2,cy2,ts*0.4,0,Math.PI*2);b.fill();
+          b.strokeStyle=isP1Castle?"rgba(34,102,187,0.7)":"rgba(187,51,51,0.7)";
+          b.lineWidth=2;b.beginPath();b.arc(cx2,cy2,ts*0.4,0,Math.PI*2);b.stroke();
+          b.strokeStyle="rgba(40,60,25,0.15)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
+        } else if(cell===5||cell===6){
+          // Tower cell — grass base with team color indicator
+          var isP1Tow=cell===5;
+          var isTopH2=r<GRID_ROWS/2;
+          b.fillStyle=isTopH2?"#4E7A35":"#3D6628";
+          b.fillRect(tx,ty,ts,ts);
+          b.fillStyle="rgba("+(50+((r+c)%3)*10)+","+(90+((r*3+c)%5)*8)+","+(30+((r+c*2)%4)*5)+",0.3)";
+          b.fillRect(tx,ty,ts,ts);
+          // Stone base
+          var cx3=tx+ts/2,cy3=ty+ts/2;
+          b.fillStyle="#6A6A68";b.beginPath();b.arc(cx3,cy3,ts*0.38+1,0,Math.PI*2);b.fill();
+          b.fillStyle="#888884";b.beginPath();b.arc(cx3,cy3,ts*0.38,0,Math.PI*2);b.fill();
+          b.strokeStyle=isP1Tow?"rgba(34,102,187,0.6)":"rgba(187,51,51,0.6)";
+          b.lineWidth=2;b.beginPath();b.arc(cx3,cy3,ts*0.38-1,0,Math.PI*2);b.stroke();
           b.strokeStyle="rgba(40,60,25,0.15)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
         } else {
-          // Grass tile
-          var brightness=((r*7+c*13)%5)*3;
-          var g1="#"+(60+brightness).toString(16)+(100+brightness).toString(16)+(35+brightness).toString(16);
+          // Grass tile (cell===0)
           var isTopHalf=r<GRID_ROWS/2;
           b.fillStyle=isTopHalf?"#4E7A35":"#3D6628";
           b.fillRect(tx,ty,ts,ts);
-          // Variation
           b.fillStyle="rgba("+(50+((r+c)%3)*10)+","+(90+((r*3+c)%5)*8)+","+(30+((r+c*2)%4)*5)+",0.3)";
           b.fillRect(tx,ty,ts,ts);
-          // Subtle grass tuft
           if((r*11+c*7)%8===0){
             b.strokeStyle="rgba(60,120,40,0.5)";b.lineWidth=1;
             b.beginPath();b.moveTo(tx+ts/2,ty+ts/2);b.lineTo(tx+ts/2+2,ty+ts/2-4);b.stroke();
             b.beginPath();b.moveTo(tx+ts/2+3,ty+ts/2);b.lineTo(tx+ts/2+5,ty+ts/2-3);b.stroke();
           }
-          // Grid line (very subtle on grass)
           b.strokeStyle="rgba(40,60,25,0.15)";b.lineWidth=0.5;b.strokeRect(tx,ty,ts,ts);
         }
       }
     }
 
     // ─── River at center row ───
-    var midRow=Math.floor(GRID_ROWS/2);
     var ry=midRow*ts;
-    // Check if path crosses this row — draw bridge there
-    var bridgeCols={};
-    if(MAP[midRow]){for(var c=0;c<GRID_COLS;c++){if(MAP[midRow][c]===1)bridgeCols[c]=true;}}
-    // River water
-    b.fillStyle="#1A5C8A";b.fillRect(0,ry,W,ts);
     var rGrd=b.createLinearGradient(0,ry,0,ry+ts);
     rGrd.addColorStop(0,"#2A7CB8");rGrd.addColorStop(0.3,"#3A9CD8");
     rGrd.addColorStop(0.5,"#4AACEE");rGrd.addColorStop(0.7,"#3A9CD8");
     rGrd.addColorStop(1,"#2A7CB8");
-    b.fillStyle=rGrd;b.fillRect(0,ry+1,W,ts-2);
+    // Paint river over non-bridge cells
+    for(var c=0;c<GRID_COLS;c++){
+      if(MAP[midRow][c]===1){
+        b.fillStyle=rGrd;b.fillRect(c*ts,ry,ts,ts);
+      }
+    }
     // River banks
     b.fillStyle="#4A6030";b.fillRect(0,ry-2,W,3);b.fillRect(0,ry+ts-1,W,3);
-    // Bridge tiles over river
-    for(var bc in bridgeCols){
-      var bx=parseInt(bc)*ts;
+    // Bridge tiles
+    for(var bi=0;bi<BRIDGE_COLS.length;bi++){
+      var bx=BRIDGE_COLS[bi]*ts;
       b.fillStyle="#5A4025";b.fillRect(bx,ry-2,ts,ts+4);
       b.fillStyle="#7A6344";b.fillRect(bx+2,ry,ts-4,ts);
-      // Planks
       b.fillStyle="#6B553A";
       for(var pl=0;pl<3;pl++){b.fillRect(bx+2,ry+pl*(ts/3),ts-4,1);}
-      // Rails
       b.fillStyle="#4A3520";
       b.fillRect(bx,ry-2,2,ts+4);b.fillRect(bx+ts-2,ry-2,2,ts+4);
+    }
+
+    // ─── Draw cached path (semi-transparent) ───
+    for(var pp=1;pp<=2;pp++){
+      var path=cachedPaths[pp];
+      if(!path)continue;
+      b.save();
+      b.globalAlpha=0.15;
+      b.fillStyle=pp===1?"#5599DD":"#DD5555";
+      for(var pi=0;pi<path.length;pi++){
+        b.fillRect(path[pi][1]*ts+ts*0.2,path[pi][0]*ts+ts*0.2,ts*0.6,ts*0.6);
+      }
+      b.restore();
     }
 
     // ─── Fill remaining area below/above grid ───
@@ -2625,27 +2609,53 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(now-castleTimer1>=CASTLE_SPD){castleTimer1=now;castleShoot(1,now);}
     if(now-castleTimer2>=CASTLE_SPD){castleTimer2=now;castleShoot(2,now);}
 
-    // ─── UPDATE UNITS (path-based movement) ───
+    // ─── UPDATE UNITS (A* pathfinding movement) ───
     var p1atk=[],p2atk=[];
     liveUnits.forEach(function(u){
       if(!u.alive)return;
       if(u.player===1)p1atk.push(u);
       else p2atk.push(u);
     });
-    var pLen=pathTotalLength();
 
     liveUnits.forEach(function(u){
       if(!u.alive||u.state==="dead")return;
 
       if(u.state==="march"){
+        // Recalc path if grid changed
+        if(u.pathVer!==pathVersion){
+          var myR=Math.round((u.y-TILE_SIZE/2)/TILE_SIZE);
+          var myC=Math.round((u.x-TILE_SIZE/2)/TILE_SIZE);
+          myR=Math.max(0,Math.min(GRID_ROWS-1,myR));
+          myC=Math.max(0,Math.min(GRID_COLS-1,myC));
+          var endR=u.player===1?topCastleRow:botCastleRow;
+          var endC=u.player===1?topCastleCol:botCastleCol;
+          u.path=astar(myR,myC,endR,endC);
+          u.pathIdx=0;u.pathVer=pathVersion;
+          u.blocked=!u.path;
+        }
+        // If blocked, move toward and attack nearest enemy tower
+        if(u.blocked){
+          var bt=findBlockingTower(u);
+          if(bt){
+            var d2=dist(u,bt);
+            if(d2<=TILE_SIZE*1.5){
+              // Close enough — attack
+              u.state="siegeFight";u.fightTarget=bt;
+            } else {
+              // Walk toward the tower
+              var dx=bt.x-u.x,dy=bt.y-u.y;
+              var dl=Math.sqrt(dx*dx+dy*dy)||1;
+              u.x+=dx/dl*u.speed*dt;
+              u.y+=dy/dl*u.speed*dt;
+            }
+          }
+          return;
+        }
         var enemies=u.player===1?[p2atk]:[p1atk];
         // Siege units: check for enemy towers first
         if(u.siege){
           var siegeTgt=findSiegeTarget(u);
-          if(siegeTgt){
-            u.state="siegeFight";u.fightTarget=siegeTgt;
-            return;
-          }
+          if(siegeTgt){u.state="siegeFight";u.fightTarget=siegeTgt;return;}
         }
         // Ranged units: check if enemy in range first
         if(u.range>0){
@@ -2669,18 +2679,31 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
             u.speed=u.baseSpeed*(1+(u.chargeSpeedMul-1)*ramp);
           }
         }
-        // Move along path
-        var moveAmt=u.speed*SPEED_BASE*dt/pLen;
-        u.pathT+=moveAmt*u.dir;
-        var pos=pathPos(u.pathT);
-        u.x=pos.x+(u.x-pos.x)*0.85; // smooth lateral interpolation
-        u.y=pos.y;
+        // Move along A* path
+        if(u.path&&u.pathIdx<u.path.length-1){
+          var nextWP=u.path[u.pathIdx+1];
+          var tx=nextWP[1]*TILE_SIZE+TILE_SIZE/2;
+          var ty=nextWP[0]*TILE_SIZE+TILE_SIZE/2;
+          var dx2=tx-u.x,dy2=ty-u.y;
+          var d2=Math.sqrt(dx2*dx2+dy2*dy2);
+          var movePixels=u.speed*SPEED_BASE*dt;
+          if(d2<movePixels+2){
+            u.x=tx;u.y=ty;u.pathIdx++;
+          } else {
+            u.x+=dx2/d2*movePixels;
+            u.y+=dy2/d2*movePixels;
+          }
+        }
         // Dust particles
         var dustChance=u.speed>u.baseSpeed*1.3?0.2:0.04;
         if(!u.fly&&Math.random()<dustChance){particles.push({x:u.x+(Math.random()-0.5)*8,y:u.y+8,vx:(Math.random()-0.5)*0.5,vy:-Math.random()*0.5,life:0.5,maxLife:0.5,r:Math.random()*2+1,color:"#7A6A4A"});}
         // Reached enemy castle?
-        if(u.player===1&&u.pathT>=1){u.pathT=1;var ep=pathPos(1);u.x=ep.x;u.y=ep.y;u.state="hitCastle";}
-        if(u.player===2&&u.pathT<=0){u.pathT=0;var ep=pathPos(0);u.x=ep.x;u.y=ep.y;u.state="hitCastle";}
+        if(u.path&&u.pathIdx>=u.path.length-1){
+          var endR=u.player===1?topCastleRow:botCastleRow;
+          var endC=u.player===1?topCastleCol:botCastleCol;
+          u.x=endC*TILE_SIZE+TILE_SIZE/2;u.y=endR*TILE_SIZE+TILE_SIZE/2;
+          u.state="hitCastle";
+        }
       }
       else if(u.state==="siegeFight"){
         // Attack enemy tower
@@ -2773,30 +2796,32 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       }
     });
 
-    // ─── DRAW TOWER SPOTS (highlight available when placing) ───
-    // Highlight available tower spots for my side
-    for(var si=0;si<TOWER_SPOTS.length;si++){
-      var sp=TOWER_SPOTS[si];
-      if(sp.side!==myPlayer)continue;
-      var spY=vY(sp.y);
-      if(sp.owner===0){
-        // Pulse available spots
+    // ─── HIGHLIGHT BUILDABLE CELLS + SELECTED CELL ───
+    var mySideStart=myPlayer===1?midRow+1:0;
+    var mySideEnd=myPlayer===1?GRID_ROWS:midRow;
+    for(var r=mySideStart;r<mySideEnd;r++){
+      for(var c=0;c<GRID_COLS;c++){
+        if(MAP[r][c]!==0)continue;
+        var hx=c*TILE_SIZE+TILE_SIZE/2, hy=vY(r*TILE_SIZE+TILE_SIZE/2);
+        // Subtle pulse on buildable cells
         ctx.save();
-        ctx.globalAlpha=0.2+Math.sin(now*0.004+si)*0.1;
-        ctx.strokeStyle="#88cc88";ctx.lineWidth=1.5;
-        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.35,0,Math.PI*2);ctx.stroke();
+        ctx.globalAlpha=0.12+Math.sin(now*0.003+r*3+c*7)*0.06;
+        ctx.strokeStyle="#88cc88";ctx.lineWidth=1;
+        ctx.strokeRect(c*TILE_SIZE+2,hy-TILE_SIZE/2+2,TILE_SIZE-4,TILE_SIZE-4);
         ctx.restore();
       }
-      // Highlight selected spot
-      if(si===towerPopupSpot){
-        ctx.save();
-        ctx.globalAlpha=0.5+Math.sin(now*0.008)*0.2;
-        ctx.strokeStyle="#FFD54F";ctx.lineWidth=3;
-        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.4,0,Math.PI*2);ctx.stroke();
-        ctx.fillStyle="rgba(255,213,79,0.15)";
-        ctx.beginPath();ctx.arc(sp.x,spY,TILE_SIZE*0.4,0,Math.PI*2);ctx.fill();
-        ctx.restore();
-      }
+    }
+    // Highlight selected cell
+    if(towerPopupRow>=0&&towerPopupCol>=0){
+      var selX=towerPopupCol*TILE_SIZE+TILE_SIZE/2;
+      var selY=vY(towerPopupRow*TILE_SIZE+TILE_SIZE/2);
+      ctx.save();
+      ctx.globalAlpha=0.5+Math.sin(now*0.008)*0.2;
+      ctx.strokeStyle="#FFD54F";ctx.lineWidth=3;
+      ctx.strokeRect(towerPopupCol*TILE_SIZE+1,selY-TILE_SIZE/2+1,TILE_SIZE-2,TILE_SIZE-2);
+      ctx.fillStyle="rgba(255,213,79,0.15)";
+      ctx.fillRect(towerPopupCol*TILE_SIZE,selY-TILE_SIZE/2,TILE_SIZE,TILE_SIZE);
+      ctx.restore();
     }
 
     // ─── DRAW TOWERS ───
@@ -2951,9 +2976,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       GOLD_RATE_BASE:GOLD_RATE_BASE,
       fm:fm,S:S,
       triggerApocalypse:triggerApocalypse,
-      liveUnits:liveUnits,liveTowers:liveTowers,
-      TOWER_SPOTS:TOWER_SPOTS,
-      startSolo:function(){E("mode-solo").click();E("btn-go").click();}
+      get liveUnits(){return liveUnits;},
+      get liveTowers(){return liveTowers;},
+      get MAP(){return MAP;},
+      get cachedPaths(){return cachedPaths;},
+      astar:astar,
+      startSolo:function(){gameMode="ai";myPlayer=1;playerName="TestBot";startMatchmakingAI();}
     };
   }
 
