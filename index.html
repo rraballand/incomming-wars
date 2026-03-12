@@ -334,14 +334,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     {id:"titan",em:"\uD83D\uDC79",name:"Titan",cost:1000,atk:65,hp:450,speed:0.7,atkSpd:1500,chargeDmg:85,range:0,cat:"atk",inc:2.5,fly:false,siege:true,splash:35,unlockCost:1200}
   ];
   var TOWERS=[
-    {id:"archer_tower",em:"\uD83C\uDFF9",name:"Tour Archer",cost:40,dmg:5,hp:80,atkSpd:600,range:100,targets:"both",splash:0,dot:false,cat:"tow",desc:"Rapide, anti-air",unlockCost:0},
-    {id:"cannon_tow",em:"\uD83D\uDCA5",name:"Canon",cost:100,dmg:30,hp:120,atkSpd:2200,range:110,targets:"ground",splash:0,dot:false,cat:"tow",desc:"Lent, gros d\u00e9g\u00e2ts",unlockCost:80},
-    {id:"trebuchet",em:"\uD83E\uDEA8",name:"Tr\u00e9buchet",cost:180,dmg:18,hp:100,atkSpd:2500,range:140,targets:"ground",splash:40,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts de zone",unlockCost:240},
-    {id:"flamethrower",em:"\uD83D\uDD25",name:"Lance-flamme",cost:250,dmg:8,hp:90,atkSpd:200,range:70,targets:"both",splash:25,dot:true,cat:"tow",desc:"Continu en zone",unlockCost:400},
-    {id:"ice_tower",em:"\uD83E\uDDCA",name:"Tour de Glace",cost:130,dmg:3,hp:85,atkSpd:500,range:90,targets:"both",splash:0,dot:false,slow:0.5,slowDur:3000,cat:"tow",desc:"Ralentit 50%",unlockCost:120},
-    {id:"tesla",em:"\u26A1",name:"Tour Tesla",cost:350,dmg:12,hp:70,atkSpd:1200,range:120,targets:"both",splash:0,dot:false,chain:3,cat:"tow",desc:"Cha\u00eene x3",unlockCost:500},
-    {id:"antiair",em:"\uD83C\uDFAF",name:"Tour Anti-air",cost:150,dmg:20,hp:75,atkSpd:900,range:130,targets:"air",splash:0,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts x2 volants",unlockCost:200},
-    {id:"bank",em:"\uD83C\uDFE6",name:"Banque",cost:200,dmg:0,hp:60,atkSpd:0,range:0,targets:"none",splash:0,dot:false,income:0.8,cat:"tow",desc:"+0.8 gold/s",unlockCost:300}
+    {id:"archer_tower",em:"\uD83C\uDFF9",name:"Tour Archer",cost:120,dmg:5,hp:80,atkSpd:600,range:100,targets:"both",splash:0,dot:false,cat:"tow",desc:"Rapide, anti-air",unlockCost:0},
+    {id:"cannon_tow",em:"\uD83D\uDCA5",name:"Canon",cost:300,dmg:30,hp:120,atkSpd:2200,range:110,targets:"ground",splash:0,dot:false,cat:"tow",desc:"Lent, gros d\u00e9g\u00e2ts",unlockCost:80},
+    {id:"trebuchet",em:"\uD83E\uDEA8",name:"Tr\u00e9buchet",cost:540,dmg:18,hp:100,atkSpd:2500,range:140,targets:"ground",splash:40,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts de zone",unlockCost:240},
+    {id:"flamethrower",em:"\uD83D\uDD25",name:"Lance-flamme",cost:750,dmg:8,hp:90,atkSpd:200,range:70,targets:"both",splash:25,dot:true,cat:"tow",desc:"Continu en zone",unlockCost:400},
+    {id:"ice_tower",em:"\uD83E\uDDCA",name:"Tour de Glace",cost:390,dmg:3,hp:85,atkSpd:500,range:90,targets:"both",splash:0,dot:false,slow:0.5,slowDur:3000,cat:"tow",desc:"Ralentit 50%",unlockCost:120},
+    {id:"tesla",em:"\u26A1",name:"Tour Tesla",cost:1050,dmg:12,hp:70,atkSpd:1200,range:120,targets:"both",splash:0,dot:false,chain:3,cat:"tow",desc:"Cha\u00eene x3",unlockCost:500},
+    {id:"antiair",em:"\uD83C\uDFAF",name:"Tour Anti-air",cost:450,dmg:20,hp:75,atkSpd:900,range:130,targets:"air",splash:0,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts x2 volants",unlockCost:200},
+    {id:"bank",em:"\uD83C\uDFE6",name:"Banque",cost:600,dmg:0,hp:60,atkSpd:0,range:0,targets:"none",splash:0,dot:false,income:0.8,cat:"tow",desc:"+0.8 gold/s",unlockCost:300}
   ];
   var FRG=[
     {id:"weapon",em:"\u2694\uFE0F",name:"Armes",desc:"+15% ATQ troupes",base:60,eff:"atk",bon:0.15},
@@ -1091,6 +1091,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         var mySide=myPlayer===1?(gr>midRow):(gr<midRow);
         if(!mySide){closeTowerPopup();return;}
         openTowerPopupAt(gr,gc,rect);
+      });
+      // Close popup when clicking outside canvas & popup
+      document.addEventListener("click",function(ev){
+        var popup=E("tower-popup");
+        if(!popup.classList.contains("active"))return;
+        if(canvas.contains(ev.target)||popup.contains(ev.target))return;
+        closeTowerPopup();
       });
     }
     if(!window._resizeBound){window._resizeBound=true;window.addEventListener("resize",szCanvas);}
@@ -2633,89 +2640,63 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   // ══════ DRAW HELPERS ══════
   function drawCastleV(cx,y,col,hp,max,label,isTop){
     var pct=Math.max(0,hp/max);
-    var cw=66,ch=44;
+    var ts=TILE_SIZE;
     var isBlue=col!=="#d83b3b";
     var wall1=isBlue?"#4A6A90":"#905050";
     var wall2=isBlue?"#5A80A8":"#A86060";
     var dark=isBlue?"#2A4060":"#602020";
-    var light=isBlue?"#7098C0":"#C08080";
+    var rx=cx-ts/2,ry=y;
 
-    // No flip — castle always upright
-
-    var rx=cx-cw/2;
-
-    // Shadow
-    ctx.fillStyle="rgba(0,0,0,0.2)";
-    ctx.beginPath();ctx.ellipse(cx,y+ch+2,cw/2+6,5,0,0,Math.PI*2);ctx.fill();
-
-    // Main wall
+    // Main rampart body
     ctx.fillStyle=wall1;
-    roundRect(rx+4,y+8,cw-8,ch-8,4);ctx.fill();
+    roundRect(rx+2,ry+4,ts-4,ts-8,3);ctx.fill();
     ctx.fillStyle=wall2;
-    roundRect(rx+6,y+10,cw-12,ch-14,3);ctx.fill();
+    roundRect(rx+4,ry+6,ts-8,ts-12,2);ctx.fill();
     // Stone lines
-    ctx.strokeStyle=dark+"44";ctx.lineWidth=0.7;
-    for(var bi=0;bi<3;bi++){
-      var by2=y+16+bi*10;
-      ctx.beginPath();ctx.moveTo(rx+8,by2);ctx.lineTo(rx+cw-8,by2);ctx.stroke();
+    ctx.strokeStyle=dark+"55";ctx.lineWidth=0.6;
+    for(var si=0;si<2;si++){
+      var sy2=ry+10+si*8;
+      ctx.beginPath();ctx.moveTo(rx+6,sy2);ctx.lineTo(rx+ts-6,sy2);ctx.stroke();
     }
-
-    // Towers (3)
-    var tw=14,th=20;
-    var tpos=[cx-22,cx,cx+22];
-    for(var ti=0;ti<3;ti++){
-      var tx=tpos[ti]-tw/2;
-      var ty=y-th+8;
-      // Tower body
-      ctx.fillStyle=wall2;roundRect(tx,ty,tw,th,2);ctx.fill();
-      ctx.strokeStyle=dark;ctx.lineWidth=1;roundRect(tx,ty,tw,th,2);ctx.stroke();
-      // Roof (pointed)
-      ctx.fillStyle=isBlue?"#2A4060":"#802020";
-      ctx.beginPath();
-      ctx.moveTo(tx-2,ty);ctx.lineTo(tx+tw/2,ty-10);ctx.lineTo(tx+tw+2,ty);ctx.fill();
-      // Window glow
-      ctx.fillStyle="#FFE08888";
-      ctx.beginPath();ctx.arc(tx+tw/2,ty+th/2,2.5,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle="#FFFDE866";
-      ctx.beginPath();ctx.arc(tx+tw/2,ty+th/2,1.2,0,Math.PI*2);ctx.fill();
+    // Crenelations (top)
+    var crenY=ry+1;
+    var crenW=6,crenH=5,crenGap=3;
+    var totalCren=Math.floor((ts-8)/(crenW+crenGap));
+    var crenStart=rx+4+(ts-8-totalCren*(crenW+crenGap)+crenGap)/2;
+    ctx.fillStyle=wall1;
+    for(var ci=0;ci<totalCren;ci++){
+      var cX=crenStart+ci*(crenW+crenGap);
+      ctx.fillRect(cX,crenY,crenW,crenH);
+      ctx.strokeStyle=dark;ctx.lineWidth=0.5;ctx.strokeRect(cX,crenY,crenW,crenH);
     }
-
-    // Main wall outline
-    ctx.strokeStyle=dark;ctx.lineWidth=1.5;
-    roundRect(rx+4,y+8,cw-8,ch-8,4);ctx.stroke();
-
-    // Gate
+    // Gate arch
     ctx.fillStyle=dark;
-    var gateY=y+8;
-    ctx.beginPath();ctx.moveTo(cx-7,gateY+14);ctx.lineTo(cx-7,gateY+5);
-    ctx.arc(cx,gateY+5,7,Math.PI,0);ctx.lineTo(cx+7,gateY+14);ctx.fill();
-    ctx.fillStyle="#00000033";
-    ctx.beginPath();ctx.moveTo(cx,gateY+1);ctx.lineTo(cx,gateY+14);ctx.strokeStyle="#00000044";ctx.lineWidth=0.5;ctx.stroke();
-
-    // Flag (center tower, animated)
-    var flagY=y-th-6;
-    var wave=Math.sin(performance.now()/250)*2.5;
-    ctx.strokeStyle=dark;ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(cx,flagY);ctx.lineTo(cx,flagY+12);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5,ry+ts-6);ctx.lineTo(cx-5,ry+ts/2+2);
+    ctx.arc(cx,ry+ts/2+2,5,Math.PI,0);ctx.lineTo(cx+5,ry+ts-6);ctx.fill();
+    // Outline
+    ctx.strokeStyle=dark;ctx.lineWidth=1.2;
+    roundRect(rx+2,ry+4,ts-4,ts-8,3);ctx.stroke();
+    // Flag (animated)
+    var flagY=ry-4;
+    var wave=Math.sin(performance.now()/250)*2;
+    ctx.strokeStyle=dark;ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(cx,flagY+10);ctx.lineTo(cx,flagY);ctx.stroke();
     ctx.fillStyle=col;
-    ctx.beginPath();ctx.moveTo(cx,flagY+3);ctx.lineTo(cx+9+wave,flagY+7);ctx.lineTo(cx,flagY+11);ctx.fill();
+    ctx.beginPath();ctx.moveTo(cx,flagY+1);ctx.lineTo(cx+7+wave,flagY+4);ctx.lineTo(cx,flagY+7);ctx.fill();
 
-    // (no flip to restore)
-
-    // HP bar (drawn OUTSIDE flip so it stays readable)
+    // HP bar
     var hpC=pct>0.5?"#4CAF50":pct>0.25?"#FFC107":"#E53935";
-    var hpY=isTop?y-8:y+ch+4;
-    ctx.fillStyle="#00000055";roundRect(rx+4,hpY,cw-8,6,3);ctx.fill();
-    if(pct>0){ctx.fillStyle=hpC;roundRect(rx+5,hpY+1,Math.max(3,(cw-10)*pct),4,2);ctx.fill();}
-    if(pct>0){ctx.fillStyle="#ffffff22";roundRect(rx+5,hpY+1,Math.max(3,(cw-10)*pct),2,2);ctx.fill();}
+    var hpY=isTop?ry-6:ry+ts+1;
+    ctx.fillStyle="#00000055";roundRect(rx+4,hpY,ts-8,5,2);ctx.fill();
+    if(pct>0){ctx.fillStyle=hpC;roundRect(rx+5,hpY+1,Math.max(2,(ts-10)*pct),3,1.5);ctx.fill();}
 
-    // Label + HP text (outside flip)
+    // Label + HP text
     ctx.textAlign="center";ctx.strokeStyle="#000";
-    ctx.font="bold 10px Cinzel,serif";ctx.lineWidth=3;ctx.fillStyle="#fff";
-    var ly=isTop?y-14:y+ch+16;
+    ctx.font="bold 9px Cinzel,serif";ctx.lineWidth=2.5;ctx.fillStyle="#fff";
+    var ly=isTop?ry-10:ry+ts+12;
     ctx.strokeText(label,cx,ly);ctx.fillText(label,cx,ly);
-    ctx.font="bold 8px Cinzel,serif";ctx.lineWidth=2;ctx.fillStyle="#ddd";
-    var ty2=isTop?y-3:y+ch+25;
+    ctx.font="bold 7px Cinzel,serif";ctx.lineWidth=2;ctx.fillStyle="#ddd";
+    var ty2=isTop?ry-2:ry+ts+20;
     ctx.strokeText(Math.max(0,Math.floor(hp))+" PV",cx,ty2);
     ctx.fillText(Math.max(0,Math.floor(hp))+" PV",cx,ty2);
     ctx.lineWidth=1;
@@ -2955,10 +2936,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     // ─── CASTLES (vertical) ───
     if(clientFlip){
       drawCastleV(castleX,castleTopY,"#d83b3b",S.p[1].hp,MAX_HP,opponentName,true);
-      drawCastleV(castleX,castleBotY-40,"#3b7dd8",S.p[2].hp,MAX_HP,playerName,false);
+      drawCastleV(castleX,castleBotY,"#3b7dd8",S.p[2].hp,MAX_HP,playerName,false);
     } else {
       drawCastleV(castleX,castleTopY,"#d83b3b",S.p[2].hp,MAX_HP,opponentName,true);
-      drawCastleV(castleX,castleBotY-40,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
+      drawCastleV(castleX,castleBotY,"#3b7dd8",S.p[1].hp,MAX_HP,playerName,false);
     }
 
     // ─── CASTLE SHOOTING ───
