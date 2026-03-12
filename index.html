@@ -3008,10 +3008,26 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     ctx.font="bold 8px Cinzel,serif";
     ctx.fillStyle="#FFD54F";
     ctx.fillText("Vague "+waveNum,W/2,banY-2);
-    // Queue count for player
-    if(isPrep&&waveQueue[myPlayer].length>0){
-      ctx.fillStyle="#ffcc00";ctx.font="bold 8px Cinzel,serif";
-      ctx.fillText("File: "+waveQueue[myPlayer].length+" unit\u00e9s",W/2,banY+banH+12);
+    // Queue display for player — show unit emojis
+    var myQ=waveQueue[myPlayer];
+    if(myQ.length>0){
+      ctx.font="14px sans-serif";ctx.textAlign="center";
+      var qY=banY+banH+14;
+      var maxShow=Math.min(myQ.length,10);
+      var qW=maxShow*18;
+      // Background pill
+      ctx.globalAlpha=0.7;ctx.fillStyle="#1a1a2e";
+      roundRect(W/2-qW/2-6,qY-12,qW+12,22,8);ctx.fill();
+      ctx.globalAlpha=1;
+      // Unit emojis
+      for(var qi=0;qi<maxShow;qi++){
+        var qtpl=find(ATK,myQ[qi]);
+        if(qtpl)ctx.fillText(qtpl.em,W/2-qW/2+qi*18+9,qY+4);
+      }
+      if(myQ.length>maxShow){
+        ctx.font="bold 8px Cinzel,serif";ctx.fillStyle="#ffcc00";
+        ctx.fillText("+"+( myQ.length-maxShow),W/2+qW/2+12,qY+2);
+      }
     }
 
     // ─── SHAKE ───
