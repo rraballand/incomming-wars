@@ -2938,6 +2938,23 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     animId=requestAnimationFrame(gameLoop);
   }
 
+  // ══════ TEST HOOK ══════
+  if(window.__TEST_MODE||new URLSearchParams(window.location.search).has("test")){
+    window.__test={
+      ATK:ATK,TOWERS:TOWERS,FRG:FRG,
+      STRONG_VS:STRONG_VS,STRONG_MUL:STRONG_MUL,
+      MAX_HP:MAX_HP,CASTLE_ATK:CASTLE_ATK,
+      APOCALYPSE_COST:APOCALYPSE_COST,
+      APOCALYPSE_INCOME_PENALTY:APOCALYPSE_INCOME_PENALTY,
+      GOLD_RATE_BASE:GOLD_RATE_BASE,
+      fm:fm,S:S,
+      triggerApocalypse:triggerApocalypse,
+      liveUnits:liveUnits,liveTowers:liveTowers,
+      TOWER_SPOTS:TOWER_SPOTS,
+      startSolo:function(){E("mode-solo").click();E("btn-go").click();}
+    };
+  }
+
 })();
 </script>
 </body>

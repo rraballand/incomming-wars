@@ -1,0 +1,19 @@
+{
+  "name": "peaceful-shtern",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:rraballand/incomming-wars.git",
+  "author": "Romain <raballand.romain@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "test": "cucumber-js",
+    "test:balance": "cucumber-js --tags @balance"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^12.7.0",
+    "@types/node": "^25.4.0",
+    "playwright": "^1.58.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
