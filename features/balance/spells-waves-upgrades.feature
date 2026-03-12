@@ -22,7 +22,7 @@ Feature: Sorts, vagues et améliorations
 
   Scenario: La banque génère du revenu passif
     Given les constantes du jeu sont chargées
-    Then la tour "bank" a un revenu de 1.5
+    Then la tour "bank" a un revenu de 0.8
 
   Scenario Outline: Bounty territorial = 20% du coût
     Given un "<unit>" ennemi avec un coût de <cost>
