@@ -120,8 +120,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 #cd-fill { height:0; }
 
 /* Tower placement popup */
-#tower-popup { display:none; position:absolute; z-index:30; pointer-events:auto; }
-#tower-popup.active { display:flex; flex-direction:row; gap:4px; background:linear-gradient(180deg,#1a1008f0,#0d0a06f8); border:2px solid #6B4F2E; border-radius:6px; padding:6px; box-shadow:0 4px 16px rgba(0,0,0,0.6); animation:tpFadeIn 0.15s ease; }
+#tower-popup { display:none; position:absolute; z-index:30; pointer-events:auto; max-width:calc(100vw - 16px); }
+#tower-popup.active { display:flex; flex-direction:row; flex-wrap:wrap; gap:4px; background:linear-gradient(180deg,#1a1008f0,#0d0a06f8); border:2px solid #6B4F2E; border-radius:6px; padding:6px; box-shadow:0 4px 16px rgba(0,0,0,0.6); animation:tpFadeIn 0.15s ease; }
 @keyframes tpFadeIn { 0%{opacity:0;transform:scale(0.85);} 100%{opacity:1;transform:scale(1);} }
 .tp-item { width:52px; background:#2a1a0a; border:2px solid #6B4F2E; border-radius:4px; padding:4px 2px; text-align:center; cursor:pointer; transition:all 0.15s; user-select:none; }
 .tp-item:active { transform:scale(0.92); }
@@ -451,8 +451,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     BRIDGE_COLS=[bridgeCenter];
     for(var i=0;i<BRIDGE_COLS.length;i++){MAP[midRow][BRIDGE_COLS[i]]=2;}
     // Castles
-    topCastleRow=1; topCastleCol=GRID_COLS-2;
-    botCastleRow=GRID_ROWS-2; botCastleCol=GRID_COLS-2;
+    topCastleRow=1; topCastleCol=Math.floor(GRID_COLS/2);
+    botCastleRow=GRID_ROWS-2; botCastleCol=Math.floor(GRID_COLS/2);
     MAP[topCastleRow][topCastleCol]=4;
     MAP[botCastleRow][botCastleCol]=3;
     // Castle positions in pixels
@@ -1285,16 +1285,18 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
     // Position popup near the cell
     popup.className="active";
+    popup.style.left="0px";popup.style.top="0px"; // reset to measure
     var sx=gc*TILE_SIZE+TILE_SIZE/2;
     var sy=clientFlip?(H-(gr*TILE_SIZE+TILE_SIZE/2)):(gr*TILE_SIZE+TILE_SIZE/2);
     var popW=popup.offsetWidth||200;
     var popH=popup.offsetHeight||50;
+    var maxW=Math.min(W,window.innerWidth)-10;
     var px=sx-popW/2;
     var py=sy-popH-12;
     if(py<5)py=sy+20;
     if(px<5)px=5;
-    if(px+popW>W-5)px=W-popW-5;
-    popup.style.left=px+"px";
+    if(px+popW>maxW)px=maxW-popW;
+    popup.style.left=Math.max(4,px)+"px";
     popup.style.top=py+"px";
   }
 
