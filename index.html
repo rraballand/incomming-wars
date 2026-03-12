@@ -328,7 +328,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     {id:"militia",em:"\u2694\uFE0F",name:"Milicien",cost:10,atk:4,hp:35,speed:1.2,atkSpd:1000,chargeDmg:0,range:0,cat:"atk",inc:0.3,fly:false,siege:false,unlockCost:0},
     {id:"archer",em:"\uD83C\uDFF9",name:"Archer",cost:20,atk:6,hp:16,speed:1.0,atkSpd:800,chargeDmg:0,range:120,cat:"atk",inc:0.5,fly:false,siege:false,unlockCost:30},
     {id:"knight",em:"\uD83D\uDC34",name:"Chevalier",cost:50,atk:10,hp:85,speed:1.3,atkSpd:1100,chargeDmg:28,range:0,cat:"atk",inc:1.0,fly:false,siege:false,unlockCost:80},
-    {id:"catapult",em:"\uD83D\uDCA3",name:"Catapulte",cost:100,atk:24,hp:55,speed:0.6,atkSpd:2200,chargeDmg:0,range:150,cat:"atk",inc:1.5,fly:false,siege:true,splash:35,unlockCost:150},
+    {id:"catapult",em:"\uD83D\uDCA3",name:"Catapulte",cost:100,atk:24,hp:55,speed:0.6,atkSpd:2200,chargeDmg:0,range:150,cat:"atk",inc:1.5,fly:false,siege:false,splash:35,unlockCost:150},
     {id:"griffon",em:"\uD83E\uDD85",name:"Griffon",cost:120,atk:18,hp:100,speed:1.6,atkSpd:900,chargeDmg:20,range:0,cat:"atk",inc:1.8,fly:true,siege:false,unlockCost:200},
     {id:"dragon",em:"\uD83D\uDC09",name:"Dragon",cost:250,atk:38,hp:200,speed:1.5,atkSpd:1100,chargeDmg:55,range:0,cat:"atk",inc:3.0,fly:true,siege:false,splash:30,dot:true,unlockCost:400},
     {id:"titan",em:"\uD83D\uDC79",name:"Titan",cost:500,atk:65,hp:450,speed:0.7,atkSpd:1500,chargeDmg:85,range:0,cat:"atk",inc:5.0,fly:false,siege:true,splash:35,unlockCost:600}
@@ -3008,27 +3008,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     ctx.font="bold 8px Cinzel,serif";
     ctx.fillStyle="#FFD54F";
     ctx.fillText("Vague "+waveNum,W/2,banY-2);
-    // Queue display for player — show unit emojis
-    var myQ=waveQueue[myPlayer];
-    if(myQ.length>0){
-      ctx.font="14px sans-serif";ctx.textAlign="center";
-      var qY=banY+banH+14;
-      var maxShow=Math.min(myQ.length,10);
-      var qW=maxShow*18;
-      // Background pill
-      ctx.globalAlpha=0.7;ctx.fillStyle="#1a1a2e";
-      roundRect(W/2-qW/2-6,qY-12,qW+12,22,8);ctx.fill();
-      ctx.globalAlpha=1;
-      // Unit emojis
-      for(var qi=0;qi<maxShow;qi++){
-        var qtpl=find(ATK,myQ[qi]);
-        if(qtpl)ctx.fillText(qtpl.em,W/2-qW/2+qi*18+9,qY+4);
-      }
-      if(myQ.length>maxShow){
-        ctx.font="bold 8px Cinzel,serif";ctx.fillStyle="#ffcc00";
-        ctx.fillText("+"+( myQ.length-maxShow),W/2+qW/2+12,qY+2);
-      }
-    }
+    // Queue display — drawn later (after entities) so it's on top
 
     // ─── SHAKE ───
     var shakeX=0,shakeY=0;
@@ -3492,6 +3472,32 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       return true;
     });
     ctx.globalAlpha=1;ctx.restore();
+
+    // ─── QUEUE DISPLAY (drawn on top of everything) ───
+    var myQ=waveQueue[myPlayer];
+    if(myQ.length>0){
+      var qY=H/2+52;
+      var maxShow=Math.min(myQ.length,10);
+      var qW=maxShow*20;
+      // Background pill
+      ctx.save();
+      ctx.globalAlpha=0.85;ctx.fillStyle="#1a1a2e";
+      roundRect(W/2-qW/2-8,qY-14,qW+16,26,10);ctx.fill();
+      ctx.strokeStyle="#FFD54F";ctx.lineWidth=1;
+      roundRect(W/2-qW/2-8,qY-14,qW+16,26,10);ctx.stroke();
+      ctx.globalAlpha=1;
+      // Unit emojis
+      ctx.font="16px sans-serif";ctx.textAlign="center";
+      for(var qi=0;qi<maxShow;qi++){
+        var qtpl=find(ATK,myQ[qi]);
+        if(qtpl)ctx.fillText(qtpl.em,W/2-qW/2+qi*20+10,qY+6);
+      }
+      if(myQ.length>maxShow){
+        ctx.font="bold 9px Cinzel,serif";ctx.fillStyle="#ffcc00";
+        ctx.fillText("+"+(myQ.length-maxShow),W/2+qW/2+14,qY+4);
+      }
+      ctx.restore();
+    }
 
     // ─── CLEANUP DEAD UNITS & TOWERS ───
     liveUnits=liveUnits.filter(function(u){
