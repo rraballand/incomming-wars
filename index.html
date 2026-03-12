@@ -411,15 +411,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var hasteEnd={1:0,2:0};
   var spellTargeting=null; // {spellId:"fireball"} when waiting for cell click
 
-  // ── WAVE/TEMPO ──
-  var waveNum=0;
-  var wavePhase="prep"; // "prep" or "battle"
-  var waveTimer=0;
-  var WAVE_PREP_TIME=12;
-  var WAVE_BATTLE_TIME=30;
-  var waveQueue={1:[],2:[]};
-  var waveSpawnTimer=0;
-
   // ── STATS ──
   var stats={1:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0},
              2:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0}};
@@ -1117,9 +1108,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     for(var r=0;r<GRID_ROWS;r++){for(var c=0;c<GRID_COLS;c++){if(MAP[r]&&(MAP[r][c]===5||MAP[r][c]===6))MAP[r][c]=0;}}
     recalcPaths();
     nextUnitIdx=0;
-    // Reset wave state
-    waveNum=1;wavePhase="prep";waveTimer=performance.now();
-    waveQueue={1:[],2:[]};waveSpawnTimer=0;
     // Reset spells
     spellCD={1:{fireball:0,heal:0,haste:0},2:{fireball:0,heal:0,haste:0}};
     hasteEnd={1:0,2:0};
@@ -1505,8 +1493,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       var u=ATK[i];
       var locked=u.unlockCost&&!ul[u.id];
       var noGold=locked?(S.p[myPlayer].gold<u.unlockCost):(S.p[myPlayer].gold<u.cost);
-      var combatOff=wavePhase==="battle";
-      cards[idx].className="unit-card card-atk"+(locked?" locked"+(noGold?" off":""):((noGold||combatOff)?" off":""));
+      cards[idx].className="unit-card card-atk"+(locked?" locked"+(noGold?" off":""):(noGold?" off":""));
       idx++;
     }
     idx++; // skip separator
@@ -1585,8 +1572,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   }
 
   function deployUnit(player,unitId){
-    // Only allow unit deployment during prep phase
-    if(wavePhase!=="prep")return;
     var now=performance.now();
     if(player===myPlayer&&now<deployCD1)return;
     var tpl=find(ATK,unitId);
@@ -1596,8 +1581,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     stats[player].goldSpent+=tpl.cost;
     S.p[player].incRate+=(tpl.inc||0);
     if(player===myPlayer)deployCD1=now+DEPLOY_CD;
-    waveQueue[player].push(unitId);
-    if(player===myPlayer)gf("-"+tpl.cost+" (file)");
+    var u=createUnit(player,tpl);
+    liveUnits.push(u);
+    if(player===myPlayer)gf("-"+tpl.cost);
     updateCardBar();updateUI();
     if(gameMode!=="ai"&&player===myPlayer){
       netSend({type:"deploy",unitId:unitId});
@@ -2900,35 +2886,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       }
     }
 
-    // ─── WAVE/TEMPO SYSTEM ───
-    var waveElapsed=(now-waveTimer)/1000;
-    if(wavePhase==="prep"&&waveElapsed>=WAVE_PREP_TIME){
-      wavePhase="battle";waveTimer=now;waveSpawnTimer=now;
-      addFloat(W/2,H/2-30,"\u26A0 COMBAT ! \u26A0","#ff4400");
-      updateCardBar();
-    } else if(wavePhase==="battle"){
-      // Spawn queued units (one every 300ms)
-      if(now-waveSpawnTimer>=300){
-        waveSpawnTimer=now;
-        for(var wp=1;wp<=2;wp++){
-          if(waveQueue[wp].length>0){
-            var uid=waveQueue[wp].shift();
-            var tpl2=find(ATK,uid);
-            if(tpl2){
-              var u2=createUnit(wp,tpl2);
-              liveUnits.push(u2);
-            }
-          }
-        }
-      }
-      if(waveElapsed>=WAVE_BATTLE_TIME){
-        wavePhase="prep";waveTimer=now;waveNum++;
-        waveQueue={1:[],2:[]};
-        addFloat(W/2,H/2-30,"\u2694 PREPARATION \u2694","#44cc44");
-        updateCardBar();
-      }
-    }
-
     // ─── AI (only in AI mode) ───
     if(gameMode==="ai")aiTick(now);
 
@@ -2987,28 +2944,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     var timeStr=mins+":"+(secs<10?"0":"")+secs;
     ctx.fillStyle="#3E2723";ctx.fillText(timeStr,W/2+1,H/2+5);
     ctx.fillStyle="#FFF8E1";ctx.fillText(timeStr,W/2,H/2+4);
-    // Wave info — big phase banner
-    var wvElapsed=(now-waveTimer)/1000;
-    var wvMaxTime=wavePhase==="prep"?WAVE_PREP_TIME:WAVE_BATTLE_TIME;
-    var wvRemain=Math.max(0,Math.ceil(wvMaxTime-wvElapsed));
-    var isPrep=wavePhase==="prep";
-    // Phase banner background
-    var banW=160,banH=28,banX=W/2-banW/2,banY=H/2+8;
-    var banAlpha=isPrep?0.85:(0.7+0.15*Math.sin(now/200));
-    ctx.globalAlpha=banAlpha;
-    ctx.fillStyle=isPrep?"#2E7D32":"#BF360C";
-    roundRect(banX,banY,banW,banH,6);ctx.fill();
-    ctx.globalAlpha=1;
-    // Phase label
-    var phaseLabel=isPrep?"\u2694 PREP \u2694":"\u26A0 COMBAT \u26A0";
-    ctx.font="bold 13px Cinzel,serif";
-    ctx.fillStyle="#fff";
-    ctx.fillText(phaseLabel+" "+wvRemain+"s",W/2,banY+19);
-    // Wave number
-    ctx.font="bold 8px Cinzel,serif";
-    ctx.fillStyle="#FFD54F";
-    ctx.fillText("Vague "+waveNum,W/2,banY-2);
-    // Queue display — drawn later (after entities) so it's on top
 
     // ─── SHAKE ───
     var shakeX=0,shakeY=0;
@@ -3473,32 +3408,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     });
     ctx.globalAlpha=1;ctx.restore();
 
-    // ─── QUEUE DISPLAY (drawn on top of everything) ───
-    var myQ=waveQueue[myPlayer];
-    if(myQ.length>0){
-      var qY=H/2+52;
-      var maxShow=Math.min(myQ.length,10);
-      var qW=maxShow*20;
-      // Background pill
-      ctx.save();
-      ctx.globalAlpha=0.85;ctx.fillStyle="#1a1a2e";
-      roundRect(W/2-qW/2-8,qY-14,qW+16,26,10);ctx.fill();
-      ctx.strokeStyle="#FFD54F";ctx.lineWidth=1;
-      roundRect(W/2-qW/2-8,qY-14,qW+16,26,10);ctx.stroke();
-      ctx.globalAlpha=1;
-      // Unit emojis
-      ctx.font="16px sans-serif";ctx.textAlign="center";
-      for(var qi=0;qi<maxShow;qi++){
-        var qtpl=find(ATK,myQ[qi]);
-        if(qtpl)ctx.fillText(qtpl.em,W/2-qW/2+qi*20+10,qY+6);
-      }
-      if(myQ.length>maxShow){
-        ctx.font="bold 9px Cinzel,serif";ctx.fillStyle="#ffcc00";
-        ctx.fillText("+"+(myQ.length-maxShow),W/2+qW/2+14,qY+4);
-      }
-      ctx.restore();
-    }
-
     // ─── CLEANUP DEAD UNITS & TOWERS ───
     liveUnits=liveUnits.filter(function(u){
       if(u.state==="dead"&&now-u.deathStart>600)return false;
@@ -3552,8 +3461,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       triggerApocalypse:triggerApocalypse,
       upgradeTower:upgradeTower,
       castSpell:castSpell,
-      get waveNum(){return waveNum;},
-      get wavePhase(){return wavePhase;},
       get liveUnits(){return liveUnits;},
       get liveTowers(){return liveTowers;},
       get MAP(){return MAP;},
