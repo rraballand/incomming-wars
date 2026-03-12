@@ -10,12 +10,12 @@ Feature: Économie et income
 
     Examples:
       | unit     | cost | bounty |
-      | militia  |   10 |      2 |
-      | archer   |   20 |      4 |
-      | knight   |   50 |     10 |
-      | catapult |  100 |     20 |
-      | dragon   |  250 |     50 |
-      | titan    |  500 |    100 |
+      | militia  |   20 |      4 |
+      | archer   |   40 |      8 |
+      | knight   |  100 |     20 |
+      | catapult |  200 |     40 |
+      | dragon   |  500 |    100 |
+      | titan    | 1000 |    200 |
 
   Scenario: La forge armes niveau 0 coûte 60
     Given les constantes du jeu sont chargées

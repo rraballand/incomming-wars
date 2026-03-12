@@ -30,5 +30,5 @@ Feature: Sorts, vagues et améliorations
 
     Examples:
       | unit     | cost | bounty |
-      | griffon  |  120 |     24 |
-      | dragon   |  250 |     50 |
+      | griffon  |  240 |     48 |
+      | dragon   |  500 |    100 |
