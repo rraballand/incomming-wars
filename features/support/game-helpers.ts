@@ -85,6 +85,7 @@ export async function canTarget(page: Page, towerId: string, unitId: string): Pr
     const t = (window as any).__test;
     const tower = t.TOWERS.find((a: any) => a.id === tid);
     const unit = t.ATK.find((a: any) => a.id === uid);
+    if (tower.targets === 'none') return false;
     if (tower.targets === 'both') return true;
     if (tower.targets === 'ground' && unit.fly) return false;
     if (tower.targets === 'air' && !unit.fly) return false;
@@ -121,4 +122,41 @@ export async function getApocalypseData(page: Page): Promise<{ cost: number; pen
     const t = (window as any).__test;
     return { cost: t.APOCALYPSE_COST, penalty: t.APOCALYPSE_INCOME_PENALTY };
   });
+}
+
+/** Get spell count */
+export async function getSpellCount(page: Page): Promise<number> {
+  return page.evaluate(() => (window as any).__test.SPELLS.length);
+}
+
+/** Get spell data by id */
+export async function getSpellData(page: Page, spellId: string): Promise<{ id: string; cost: number; cd: number }> {
+  return page.evaluate((sid) => {
+    const t = (window as any).__test;
+    const s = t.SPELLS.find((sp: any) => sp.id === sid);
+    return { id: s.id, cost: s.cost, cd: s.cd };
+  }, spellId);
+}
+
+/** Get tower count */
+export async function getTowerCount(page: Page): Promise<number> {
+  return page.evaluate(() => (window as any).__test.TOWERS.length);
+}
+
+/** Get tower income */
+export async function getTowerIncome(page: Page, towerId: string): Promise<number> {
+  return page.evaluate((tid) => {
+    const t = (window as any).__test;
+    const tw = t.TOWERS.find((a: any) => a.id === tid);
+    return tw.income || 0;
+  }, towerId);
+}
+
+/** Get tower cost */
+export async function getTowerCost(page: Page, towerId: string): Promise<number> {
+  return page.evaluate((tid) => {
+    const t = (window as any).__test;
+    const tw = t.TOWERS.find((a: any) => a.id === tid);
+    return tw.cost;
+  }, towerId);
 }

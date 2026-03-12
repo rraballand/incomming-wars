@@ -337,7 +337,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     {id:"archer_tower",em:"\uD83C\uDFF9",name:"Tour Archer",cost:25,dmg:5,hp:80,atkSpd:600,range:100,targets:"both",splash:0,dot:false,cat:"tow",desc:"Rapide, anti-air",unlockCost:0},
     {id:"cannon_tow",em:"\uD83D\uDCA5",name:"Canon",cost:60,dmg:30,hp:120,atkSpd:2200,range:110,targets:"ground",splash:0,dot:false,cat:"tow",desc:"Lent, gros d\u00e9g\u00e2ts",unlockCost:40},
     {id:"trebuchet",em:"\uD83E\uDEA8",name:"Tr\u00e9buchet",cost:100,dmg:18,hp:100,atkSpd:2500,range:140,targets:"ground",splash:40,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts de zone",unlockCost:120},
-    {id:"flamethrower",em:"\uD83D\uDD25",name:"Lance-flamme",cost:150,dmg:8,hp:90,atkSpd:200,range:70,targets:"both",splash:25,dot:true,cat:"tow",desc:"Continu en zone",unlockCost:200}
+    {id:"flamethrower",em:"\uD83D\uDD25",name:"Lance-flamme",cost:150,dmg:8,hp:90,atkSpd:200,range:70,targets:"both",splash:25,dot:true,cat:"tow",desc:"Continu en zone",unlockCost:200},
+    {id:"ice_tower",em:"\uD83E\uDDCA",name:"Tour de Glace",cost:80,dmg:3,hp:85,atkSpd:500,range:90,targets:"both",splash:0,dot:false,slow:0.5,slowDur:3000,cat:"tow",desc:"Ralentit 50%",unlockCost:60},
+    {id:"tesla",em:"\u26A1",name:"Tour Tesla",cost:200,dmg:12,hp:70,atkSpd:1200,range:120,targets:"both",splash:0,dot:false,chain:3,cat:"tow",desc:"Cha\u00eene x3",unlockCost:250},
+    {id:"antiair",em:"\uD83C\uDFAF",name:"Tour Anti-air",cost:90,dmg:20,hp:75,atkSpd:900,range:130,targets:"air",splash:0,dot:false,cat:"tow",desc:"D\u00e9g\u00e2ts x2 volants",unlockCost:100},
+    {id:"bank",em:"\uD83C\uDFE6",name:"Banque",cost:120,dmg:0,hp:60,atkSpd:0,range:0,targets:"none",splash:0,dot:false,income:1.5,cat:"tow",desc:"+1.5 gold/s",unlockCost:150}
   ];
   var FRG=[
     {id:"weapon",em:"\u2694\uFE0F",name:"Armes",desc:"+15% ATQ troupes",base:60,eff:"atk",bon:0.15},
@@ -396,6 +400,33 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   var clientFlip=false;
   var selectedTower=null; // tower id when placing
   var towerPopupRow=-1,towerPopupCol=-1; // grid coords of open popup
+
+  // ── SPELLS ──
+  var SPELLS=[
+    {id:"fireball",em:"\uD83D\uDD25",name:"Boule de feu",cost:80,cd:60000,desc:"50 dmg zone + burn"},
+    {id:"heal",em:"\uD83D\uDC9A",name:"Soin",cost:50,cd:45000,desc:"+30 HP alli\u00e9s"},
+    {id:"haste",em:"\u26A1",name:"H\u00e2te",cost:60,cd:50000,desc:"+80% vitesse 8s"}
+  ];
+  var spellCD={1:{fireball:0,heal:0,haste:0},2:{fireball:0,heal:0,haste:0}};
+  var hasteEnd={1:0,2:0};
+  var spellTargeting=null; // {spellId:"fireball"} when waiting for cell click
+
+  // ── WAVE/TEMPO ──
+  var waveNum=0;
+  var wavePhase="prep"; // "prep" or "battle"
+  var waveTimer=0;
+  var WAVE_PREP_TIME=12;
+  var WAVE_BATTLE_TIME=30;
+  var waveQueue={1:[],2:[]};
+  var waveSpawnTimer=0;
+
+  // ── STATS ──
+  var stats={1:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0},
+             2:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0}};
+
+  // ── KILL STREAK ──
+  var killStreak={1:0,2:0};
+
   function vY(y){return clientFlip?H-y:y;}
 
   // ── Vertical layout positions ──
@@ -475,6 +506,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         if(nr<0||nr>=rows||nc<0||nc>=cols)continue;
         var cell=MAP[nr][nc];
         // Walkable: grass(0), bridge(2), destination castle
+        // Blocked: river(1), towers(5,6), non-dest castles
         if(cell!==0&&cell!==2){
           if(nr===er&&nc===ec&&(cell===3||cell===4)){/* castle dest is ok */}
           else continue;
@@ -956,6 +988,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       var who=(gameMode==="host")?2:1;
       sellTower(who,data.gridRow,data.gridCol);
     }
+    else if(data.type==="upgradeTower"){
+      var who=(gameMode==="host")?2:1;
+      upgradeTower(who,data.gridRow,data.gridCol);
+    }
+    else if(data.type==="spell"){
+      var who=(gameMode==="host")?2:1;
+      castSpell(who,data.spellId,data.targetRow,data.targetCol);
+    }
     else if(data.type==="unlock"){
       var who=(gameMode==="host")?2:1;
       var tpl=find(ALLCARDS,data.id);
@@ -1044,7 +1084,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         if(clientFlip)cy=H-cy;
         var gr=Math.floor(cy/TILE_SIZE);
         var gc=Math.floor(cx/TILE_SIZE);
-        if(gr<0||gr>=GRID_ROWS||gc<0||gc>=GRID_COLS){closeTowerPopup();return;}
+        if(gr<0||gr>=GRID_ROWS||gc<0||gc>=GRID_COLS){closeTowerPopup();spellTargeting=null;return;}
+        // Spell targeting (fireball)
+        if(spellTargeting){
+          castSpell(myPlayer,spellTargeting.spellId,gr,gc);
+          spellTargeting=null;
+          return;
+        }
         // Toggle: re-click same cell closes popup
         if(gr===towerPopupRow&&gc===towerPopupCol){closeTowerPopup();return;}
         var cell=MAP[gr][gc];
@@ -1066,11 +1112,21 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     castleTimer1=lastTick;castleTimer2=lastTick;
     aiTimer=lastTick;deployCD1=0;lastNetSync=0;
     liveUnits=[];liveTowers=[];particles=[];projectiles=[];shakes=[];floatingDmg=[];
-    selectedTower=null;
+    selectedTower=null;spellTargeting=null;
     // Reset MAP tower cells to grass
     for(var r=0;r<GRID_ROWS;r++){for(var c=0;c<GRID_COLS;c++){if(MAP[r]&&(MAP[r][c]===5||MAP[r][c]===6))MAP[r][c]=0;}}
     recalcPaths();
     nextUnitIdx=0;
+    // Reset wave state
+    waveNum=1;wavePhase="prep";waveTimer=performance.now();
+    waveQueue={1:[],2:[]};waveSpawnTimer=0;
+    // Reset spells
+    spellCD={1:{fireball:0,heal:0,haste:0},2:{fireball:0,heal:0,haste:0}};
+    hasteEnd={1:0,2:0};
+    // Reset stats
+    stats={1:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0},
+           2:{dmgDealt:0,unitsKilled:0,towersDestroyed:0,goldSpent:0,spellsCast:0}};
+    killStreak={1:0,2:0};
     renderCardBar();
     updateUI();
     addLog("=== "+playerName+" VS "+opponentName+" ===","win");
@@ -1115,6 +1171,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   function triggerApocalypse(player){
     if(S.p[player].gold<APOCALYPSE_COST)return;
     S.p[player].gold-=APOCALYPSE_COST;
+    stats[player].goldSpent+=APOCALYPSE_COST;
     // Reduce income by 30%
     S.p[player].incRate=Math.max(0,S.p[player].incRate*(1-APOCALYPSE_INCOME_PENALTY));
     // Destroy ALL towers (both sides)
@@ -1186,11 +1243,25 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     var myTowCode=myPlayer===1?5:6;
 
     if(cell===myTowCode){
-      // Existing tower — show sell option
+      // Existing tower — show sell + upgrade options
       var tObj=null;
       for(var i=0;i<liveTowers.length;i++){
         if(liveTowers[i].gridRow===gr&&liveTowers[i].gridCol===gc&&liveTowers[i].alive){tObj=liveTowers[i];break;}
       }
+      // Upgrade button (if tower has damage and level < 3)
+      if(tObj&&tObj.level<3&&tObj.effDmg>0){
+        var upCost=Math.floor(tObj.cost*tObj.level*0.7);
+        var noUpGold=S.p[myPlayer].gold<upCost;
+        var upBtn=document.createElement("div");
+        upBtn.className="tp-item"+(noUpGold?" off":"");
+        upBtn.innerHTML='<div class="tp-em">\u2B06\uFE0F</div><div class="tp-cost">Niv.'+tObj.level+'\u2192'+(tObj.level+1)+'</div><div class="tp-lock"><span class="gc"></span>'+upCost+'</div>';
+        upBtn.addEventListener("click",function(){
+          upgradeTower(myPlayer,gr,gc);
+          closeTowerPopup();
+        });
+        popup.appendChild(upBtn);
+      }
+      // Sell button
       var sell=document.createElement("div");
       sell.className="tp-sell";
       var refund=Math.floor(tObj?tObj.cost*0.5:0);
@@ -1255,6 +1326,101 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(isHost&&gameMode!=="solo")netSend({type:"sellTower",gridRow:gr,gridCol:gc});
   }
 
+  function upgradeTower(player,gr,gc){
+    var tObj=null;
+    for(var i=0;i<liveTowers.length;i++){
+      if(liveTowers[i].gridRow===gr&&liveTowers[i].gridCol===gc&&liveTowers[i].alive){tObj=liveTowers[i];break;}
+    }
+    if(!tObj||tObj.level>=3)return;
+    var cost=Math.floor(tObj.cost*tObj.level*0.7);
+    if(S.p[player].gold<cost)return;
+    S.p[player].gold-=cost;
+    stats[player].goldSpent+=cost;
+    tObj.level++;
+    // +50% damage per level upgrade
+    var tpl=find(TOWERS,tObj.id);
+    if(tpl){
+      tObj.effDmg=Math.floor(tpl.dmg*fm(player,"def")*(1+0.5*(tObj.level-1)));
+      var newMaxHp=Math.floor(tpl.hp*(1+0.3*(tObj.level-1)));
+      var hpGain=newMaxHp-tObj.maxHp;
+      tObj.maxHp=newMaxHp;
+      tObj.curHp+=hpGain;
+    }
+    if(player===myPlayer){gf("-"+cost);updateUI();}
+    if(gameMode!=="ai"&&player===myPlayer){
+      netSend({type:"upgradeTower",gridRow:gr,gridCol:gc});
+    }
+  }
+
+  // ══════ SPELLS ══════
+  function castSpell(player,spellId,targetRow,targetCol){
+    var now=performance.now();
+    var spl=find(SPELLS,spellId);
+    if(!spl)return;
+    if(S.p[player].gold<spl.cost)return;
+    if(now<spellCD[player][spellId])return;
+    S.p[player].gold-=spl.cost;
+    stats[player].goldSpent+=spl.cost;
+    stats[player].spellsCast++;
+    spellCD[player][spellId]=now+spl.cd;
+
+    if(spellId==="fireball"){
+      // Deal 50 dmg in radius 50px around target cell
+      var cx=targetCol*TILE_SIZE+TILE_SIZE/2;
+      var cy=targetRow*TILE_SIZE+TILE_SIZE/2;
+      var enemies=player===1?liveUnits.filter(function(u){return u.player===2&&u.alive;}):liveUnits.filter(function(u){return u.player===1&&u.alive;});
+      for(var i=0;i<enemies.length;i++){
+        var e=enemies[i];
+        var dx=e.x-cx,dy=e.y-cy;
+        if(Math.sqrt(dx*dx+dy*dy)<=50){
+          e.curHp-=50;
+          stats[player].dmgDealt+=50;
+          if(!e.burning){e.burning=true;e.burnDmg=Math.max(e.burnDmg,10);e.burnTimer=now;}
+          addFloat(e.x,e.y-22,"-50","#ff4400");
+          if(e.curHp<=0)killUnit(e,now);
+        }
+      }
+      // Big explosion particles
+      for(var pi=0;pi<20;pi++){
+        particles.push({x:cx+(Math.random()-0.5)*50,y:cy+(Math.random()-0.5)*50,
+          vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,
+          life:1.5,maxLife:1.5,r:Math.random()*6+3,
+          color:Math.random()>0.3?"#ff4400":"#ffcc00"});
+      }
+      shakes.push({start:now,dur:400,intensity:8});
+      addFloat(cx,vY(cy),"\uD83D\uDD25 -50","#ff4400");
+    }
+    else if(spellId==="heal"){
+      // Heal all friendly units +30 HP
+      var allies=liveUnits.filter(function(u){return u.player===player&&u.alive;});
+      for(var i=0;i<allies.length;i++){
+        var a=allies[i];
+        var heal=Math.min(30,a.maxHp-a.curHp);
+        a.curHp+=heal;
+        if(heal>0)addFloat(a.x,a.y-22,"+"+heal,"#44dd44");
+        // Green particles
+        for(var pi=0;pi<3;pi++){
+          particles.push({x:a.x+(Math.random()-0.5)*10,y:a.y+(Math.random()-0.5)*10,
+            vx:(Math.random()-0.5)*2,vy:-Math.random()*3,
+            life:1,maxLife:1,r:Math.random()*3+2,
+            color:"#44dd44"});
+        }
+      }
+    }
+    else if(spellId==="haste"){
+      // +80% speed to all friendly units for 8s
+      hasteEnd[player]=now+8000;
+      var allies=liveUnits.filter(function(u){return u.player===player&&u.alive;});
+      for(var i=0;i<allies.length;i++){
+        addFloat(allies[i].x,allies[i].y-22,"\u26A1","#4488ff");
+      }
+    }
+    if(player===myPlayer){gf("-"+spl.cost);updateUI();renderCardBar();}
+    if(gameMode!=="ai"&&player===myPlayer){
+      netSend({type:"spell",spellId:spellId,targetRow:targetRow||0,targetCol:targetCol||0});
+    }
+  }
+
   function renderCardBar(){
     var bar=E("card-bar");bar.innerHTML="";
     var ul=S.p[myPlayer].unlocked;
@@ -1289,6 +1455,31 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     apoBtn.innerHTML='<div class="uc-emoji">\u2604\uFE0F</div><div class="uc-cost"><span class="gc"></span>'+APOCALYPSE_COST+'</div><div class="uc-inc" style="color:#ff6644;font-size:0.5em;">-30% rev</div>';
     apoBtn.addEventListener("click",function(){triggerApocalypse(myPlayer);});
     bar.appendChild(apoBtn);
+    // Spell buttons
+    var spSep=document.createElement("div");
+    spSep.className="card-sep";spSep.textContent="|";
+    bar.appendChild(spSep);
+    var now=performance.now();
+    SPELLS.forEach(function(sp){
+      var onCD=now<spellCD[myPlayer][sp.id];
+      var noGold=S.p[myPlayer].gold<sp.cost;
+      var btn=document.createElement("div");
+      btn.className="unit-card card-tow"+(onCD||noGold?" off":"");
+      var cdLeft=onCD?Math.ceil((spellCD[myPlayer][sp.id]-now)/1000):0;
+      btn.innerHTML='<div class="uc-emoji">'+sp.em+'</div>'
+        +'<div class="uc-name">'+sp.name+'</div>'
+        +'<div class="uc-cost"><span class="gc"></span>'+sp.cost+'</div>'
+        +(onCD?'<div class="uc-desc">'+cdLeft+'s</div>':'<div class="uc-desc">'+sp.desc+'</div>');
+      btn.addEventListener("click",(function(sid){return function(){
+        if(sid==="fireball"){
+          spellTargeting={spellId:sid};
+          addFloat(W/2,H/2,"Cliquez sur la cible","#ffcc00");
+        } else {
+          castSpell(myPlayer,sid,0,0);
+        }
+      };})(sp.id));
+      bar.appendChild(btn);
+    });
     // Re-add forge button at start
     var forgeBtn=document.createElement("button");
     forgeBtn.id="btn-forge";
@@ -1306,6 +1497,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   function updateCardBar(){
     var cards=E("card-bar").children;
     var ul=S.p[myPlayer].unlocked;
+    var now=performance.now();
     // Skip first child (forge button), iterate ATK only
     var idx=1;
     for(var i=0;i<ATK.length;i++){
@@ -1313,7 +1505,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       var u=ATK[i];
       var locked=u.unlockCost&&!ul[u.id];
       var noGold=locked?(S.p[myPlayer].gold<u.unlockCost):(S.p[myPlayer].gold<u.cost);
-      cards[idx].className="unit-card card-atk"+(locked?" locked"+(noGold?" off":""):(noGold?" off":""));
+      var combatOff=wavePhase==="battle";
+      cards[idx].className="unit-card card-atk"+(locked?" locked"+(noGold?" off":""):((noGold||combatOff)?" off":""));
       idx++;
     }
     idx++; // skip separator
@@ -1321,6 +1514,25 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(idx<cards.length){
       var apoOff=S.p[myPlayer].gold<APOCALYPSE_COST;
       cards[idx].className="unit-card card-apo"+(apoOff?" off":"");
+    }
+    idx++; // skip apocalypse
+    idx++; // skip separator
+    // Spell buttons
+    for(var si=0;si<SPELLS.length;si++){
+      if(idx>=cards.length)break;
+      var sp=SPELLS[si];
+      var onCD=now<spellCD[myPlayer][sp.id];
+      var noGold=S.p[myPlayer].gold<sp.cost;
+      cards[idx].className="unit-card card-tow"+(onCD||noGold?" off":"");
+      // Update CD text
+      if(onCD){
+        var cdEl=cards[idx].querySelector(".uc-desc");
+        if(cdEl)cdEl.textContent=Math.ceil((spellCD[myPlayer][sp.id]-now)/1000)+"s";
+      } else {
+        var cdEl=cards[idx].querySelector(".uc-desc");
+        if(cdEl)cdEl.textContent=sp.desc;
+      }
+      idx++;
     }
   }
 
@@ -1340,7 +1552,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       // A* pathfinding
       path:null,pathIdx:0,pathVer:-1,blocked:false,
       // Burn DoT (from flamethrower)
-      burning:false,burnDmg:0,burnTimer:0};
+      burning:false,burnDmg:0,burnTimer:0,
+      // Slow (from ice tower)
+      slowed:false,slowMul:1,slowEnd:0};
     // Spawn at castle position
     var spawnR=player===1?botCastleRow:topCastleRow;
     var spawnC=player===1?botCastleCol:topCastleCol;
@@ -1359,6 +1573,10 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       effDmg:Math.floor(tpl.dmg*fm(player,"def")),
       atkSpd:tpl.atkSpd,range:Math.floor(tpl.range*fm(player,"range")),targets:tpl.targets,
       splash:tpl.splash,dot:tpl.dot,
+      slow:tpl.slow||0,slowDur:tpl.slowDur||0,
+      chain:tpl.chain||0,
+      income:tpl.income||0,
+      level:1,
       x:gc*TILE_SIZE+TILE_SIZE/2,y:gr*TILE_SIZE+TILE_SIZE/2,
       alive:true,state:"idle",player:player,
       attackTimer:0,fightTarget:null,bounceStart:0,deathStart:0,idx:nextUnitIdx++,
@@ -1367,19 +1585,20 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   }
 
   function deployUnit(player,unitId){
+    // Only allow unit deployment during prep phase
+    if(wavePhase!=="prep")return;
     var now=performance.now();
     if(player===myPlayer&&now<deployCD1)return;
     var tpl=find(ATK,unitId);
     if(!tpl||S.p[player].gold<tpl.cost)return;
     if(tpl.unlockCost&&!S.p[player].unlocked[tpl.id])return;
     S.p[player].gold-=tpl.cost;
+    stats[player].goldSpent+=tpl.cost;
     S.p[player].incRate+=(tpl.inc||0);
     if(player===myPlayer)deployCD1=now+DEPLOY_CD;
-    var u=createUnit(player,tpl);
-    liveUnits.push(u);
-    if(player===myPlayer)gf("-"+tpl.cost);
-    updateCardBar();
-    updateUI();
+    waveQueue[player].push(unitId);
+    if(player===myPlayer)gf("-"+tpl.cost+" (file)");
+    updateCardBar();updateUI();
     if(gameMode!=="ai"&&player===myPlayer){
       netSend({type:"deploy",unitId:unitId});
     }
@@ -1404,6 +1623,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       return false;
     }
     S.p[player].gold-=tpl.cost;
+    stats[player].goldSpent+=tpl.cost;
     var t=createTowerObj(player,tpl,gr,gc);
     liveTowers.push(t);
     recalcPaths();buildBackground();
@@ -1439,7 +1659,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         +'<div class="fc-cost"><span class="gc"></span>'+cost+'</div>';
       c.addEventListener("click",(function(fid,fc){return function(){
         if(S.p[myPlayer].gold<fc)return;
-        S.p[myPlayer].gold-=fc;S.p[myPlayer].forge[fid]=(S.p[myPlayer].forge[fid]||0)+1;
+        S.p[myPlayer].gold-=fc;stats[myPlayer].goldSpent+=fc;S.p[myPlayer].forge[fid]=(S.p[myPlayer].forge[fid]||0)+1;
         gf("-"+fc);renderForge();updateCardBar();updateUI();
         if(gameMode!=="ai")netSend({type:"forge",forgeId:fid});
       };})(f.id,cost));
@@ -1581,8 +1801,31 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       });
       if(cheapest){
         S.p[2].gold-=cheapCost;
+        stats[2].goldSpent+=cheapCost;
         S.p[2].forge[cheapest.id]=(S.p[2].forge[cheapest.id]||0)+1;
       }
+    }
+
+    // ─── AI SPELLS ───
+    if(Math.random()<0.15+aggression*0.2){
+      var aiNow=performance.now();
+      var aiGold=S.p[2].gold;
+      SPELLS.forEach(function(sp){
+        if(aiNow>=spellCD[2][sp.id]&&aiGold>=sp.cost&&Math.random()<0.4){
+          if(sp.id==="fireball"){
+            // Target cluster of player units
+            var p1units=liveUnits.filter(function(u){return u.player===1&&u.alive;});
+            if(p1units.length>0){
+              var tgt=p1units[Math.floor(Math.random()*p1units.length)];
+              var gr2=Math.floor(tgt.y/TILE_SIZE);
+              var gc2=Math.floor(tgt.x/TILE_SIZE);
+              castSpell(2,"fireball",gr2,gc2);
+            }
+          } else {
+            castSpell(2,sp.id,0,0);
+          }
+        }
+      });
     }
   }
 
@@ -1658,6 +1901,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     // Triangle bonus on charge too
     if(STRONG_VS[attacker.id]&&STRONG_VS[attacker.id]===target.id){dmg=Math.floor(dmg*STRONG_MUL);}
     target.curHp-=dmg;
+    stats[attacker.player].dmgDealt+=dmg;
     if(attacker.dot&&!target.burning){target.burning=true;target.burnDmg=Math.max(target.burnDmg,dmg);target.burnTimer=now;}
     addFloat(target.x,target.y-28,"\u26A1-"+dmg,"#ffdd00");
     // Splash on charge (dragon, titan)
@@ -1694,6 +1938,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
     // Melee hit on primary target
     target.curHp-=dmg;
+    stats[attacker.player].dmgDealt+=dmg;
     if(attacker.dot&&!target.burning){target.burning=true;target.burnDmg=Math.max(target.burnDmg,dmg);target.burnTimer=now;}
     addFloat(target.x,target.y-22,"-"+dmg,attacker.dot?"#ff6600":"#ff4422");
     // Splash damage on nearby enemies (dragon, titan)
@@ -1722,19 +1967,34 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     addFloat(u.x,u.y-30,"\uD83D\uDC80","#ff2222");
     for(var pi=0;pi<8;pi++){particles.push({x:u.x,y:u.y,vx:(Math.random()-0.5)*4,vy:-Math.random()*4,life:1,maxLife:1,r:Math.random()*4+2,color:Math.random()>0.5?"#ff4422":"#ffaa22"});}
     shakes.push({start:now,dur:300,intensity:4});
-    // Gold bounty (20% of cost) to the opposing player
+    // Stats tracking
+    var killer=u.player===1?2:1;
+    stats[killer].unitsKilled++;
+    // Kill streak
+    killStreak[killer]++;
+    killStreak[u.player]=0; // reset victim team streak
+    if(killStreak[killer]%5===0&&killStreak[killer]>0){
+      S.p[killer].gold+=10;
+      addFloat(u.x,u.y-55,"\uD83D\uDD25 +10 streak","#ffcc00");
+    }
+    // Gold bounty (20% of cost) to the player who controls the territory
     if(u.type==="a"&&u.cost){
-      var killer=u.player===1?2:1;
       var bounty=Math.floor(u.cost*0.2);
       if(bounty>0){
-        S.p[killer].gold+=bounty;
-        addFloat(u.x,u.y-45,"+"+bounty,"\uFFD54F");
+        var gridR=Math.round((u.y-TILE_SIZE/2)/TILE_SIZE);
+        var owner=gridR>midRow?1:(gridR<midRow?2:0);
+        if(owner){
+          S.p[owner].gold+=bounty;
+          addFloat(u.x,u.y-45,"+"+bounty,owner===myPlayer?"#FFD54F":"#ff8844");
+        }
       }
     }
   }
 
   function killTower(t,now){
     t.alive=false;t.state="dead";t.deathStart=now;
+    var killer=t.player===1?2:1;
+    stats[killer].towersDestroyed++;
     addFloat(t.x,t.y-30,"\uD83D\uDCA5","#ff4422");
     for(var pi=0;pi<12;pi++){particles.push({x:t.x+(Math.random()-0.5)*20,y:t.y+(Math.random()-0.5)*20,vx:(Math.random()-0.5)*5,vy:-Math.random()*5,life:1.2,maxLife:1.2,r:Math.random()*5+2,color:Math.random()>0.3?"#ff6622":"#ffcc22"});}
     shakes.push({start:now,dur:400,intensity:6});
@@ -1749,6 +2009,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(now-unit.attackTimer<unit.atkSpd)return;
     unit.attackTimer=now;unit.bounceStart=now;
     var dmg=unit.effAtk||5;
+    stats[unit.player].dmgDealt+=dmg;
     if(unit.player===1){
       // Player attacks IA castle (top)
       S.p[2].hp-=dmg;
@@ -1779,7 +2040,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     if(!best)return;
     var dmg=CASTLE_ATK;
     projectiles.push({x:castleX,y:castleY,tx:best.x,ty:best.y,start:now,dur:350,color:castlePlayer===1?"#5588dd":"#dd5555",
-      dmg:dmg,target:best,attacker:null});
+      dmg:dmg,target:best,attacker:null,towerPlayer:castlePlayer});
   }
 
   // ══════ SPRITE SYSTEM ══════
@@ -2123,26 +2384,6 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       ctx.restore();
     }
     // ── DEFENSE SPRITES ──
-    else if(id==="wall"){
-      // === MUR - mur de pierres empilees ===
-      ctx.fillStyle="#888";
-      ctx.beginPath();ctx.moveTo(-14,-8);ctx.lineTo(14,-8);ctx.lineTo(14,8);ctx.lineTo(-14,8);ctx.closePath();ctx.fill();ctx.stroke();
-      // Stone pattern
-      ctx.fillStyle="#999";ctx.fillRect(-12,-6,10,6);ctx.strokeRect(-12,-6,10,6);
-      ctx.fillRect(2,-6,10,6);ctx.strokeRect(2,-6,10,6);
-      ctx.fillRect(-7,1,14,6);ctx.strokeRect(-7,1,14,6);
-      ctx.fillStyle="#777";ctx.fillRect(-12,1,5,6);ctx.fillRect(9,1,4,6);
-      // Crenelations
-      ctx.fillStyle="#888";
-      ctx.fillRect(-12,-12,6,4);ctx.strokeRect(-12,-12,6,4);
-      ctx.fillRect(-2,-12,6,4);ctx.strokeRect(-2,-12,6,4);
-      ctx.fillRect(8,-12,6,4);ctx.strokeRect(8,-12,6,4);
-      // Team flag
-      ctx.fillStyle=pCol(p,"body");
-      ctx.fillRect(-1,-18,3,8);ctx.strokeRect(-1,-18,3,8);
-      ctx.fillStyle=pCol(p,"accent");
-      ctx.beginPath();ctx.moveTo(2,-18);ctx.lineTo(8,-16);ctx.lineTo(2,-13);ctx.closePath();ctx.fill();ctx.stroke();
-    }
     else if(id==="tower"){
       // === TOUR - tour de guet haute ===
       ctx.fillStyle="#777";
@@ -2335,6 +2576,68 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       }
       // Fuel tank
       ctx.fillStyle="#884422";ctx.fillRect(7,-6,5,10);ctx.strokeRect(7,-6,5,10);
+    }
+    else if(t.id==="ice_tower"){
+      // Ice crystal tower
+      ctx.fillStyle="#aaddee";ctx.fillRect(-8,2,16,10);ctx.strokeRect(-8,2,16,10);
+      ctx.fillStyle="#88ccdd";
+      ctx.beginPath();ctx.moveTo(-6,-14);ctx.lineTo(6,-14);ctx.lineTo(7,4);ctx.lineTo(-7,4);ctx.closePath();ctx.fill();ctx.stroke();
+      // Ice crystal top
+      ctx.fillStyle="#cceeff";
+      ctx.beginPath();ctx.moveTo(0,-22);ctx.lineTo(-8,-14);ctx.lineTo(8,-14);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.fillStyle="#aaddff66";ctx.beginPath();ctx.arc(0,-8,4,0,Math.PI*2);ctx.fill();
+      if(isAtk){ctx.fillStyle="#88ccff";ctx.beginPath();ctx.arc(0,-18,5+Math.random()*3,0,Math.PI*2);ctx.fill();}
+    }
+    else if(t.id==="tesla"){
+      // Tesla coil tower
+      ctx.fillStyle="#555";ctx.fillRect(-8,2,16,10);ctx.strokeRect(-8,2,16,10);
+      ctx.fillStyle=pCol(p,"body");ctx.fillRect(-5,-12,10,16);ctx.strokeRect(-5,-12,10,16);
+      // Coil top
+      ctx.fillStyle="#888";ctx.beginPath();ctx.arc(0,-14,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#aaa";ctx.beginPath();ctx.arc(0,-14,3,0,Math.PI*2);ctx.fill();
+      // Lightning arcs on attack
+      if(isAtk){
+        ctx.strokeStyle="#88aaff";ctx.lineWidth=2;
+        for(var li=0;li<3;li++){
+          ctx.beginPath();ctx.moveTo(0,-14);
+          ctx.lineTo((Math.random()-0.5)*16,-20-Math.random()*8);
+          ctx.stroke();
+        }
+        ctx.strokeStyle=OL;ctx.lineWidth=1.2;
+      }
+    }
+    else if(t.id==="antiair"){
+      // Anti-air turret
+      ctx.fillStyle="#666";ctx.fillRect(-10,2,20,10);ctx.strokeRect(-10,2,20,10);
+      ctx.fillStyle=pCol(p,"body");ctx.fillRect(-8,-6,16,10);ctx.strokeRect(-8,-6,16,10);
+      // Barrel pointing up
+      ctx.fillStyle="#555";ctx.fillRect(-2,-18,4,14);ctx.strokeRect(-2,-18,4,14);
+      ctx.fillStyle="#444";ctx.beginPath();ctx.arc(0,-18,3,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Targeting reticle
+      ctx.strokeStyle=pCol(p,"accent");ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(0,-20,5,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(-7,-20);ctx.lineTo(7,-20);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,-27);ctx.lineTo(0,-13);ctx.stroke();
+      ctx.strokeStyle=OL;ctx.lineWidth=1.2;
+      if(isAtk){ctx.fillStyle="#ff8844";ctx.beginPath();ctx.arc(0,-20,4+Math.random()*2,0,Math.PI*2);ctx.fill();}
+    }
+    else if(t.id==="bank"){
+      // Bank building
+      ctx.fillStyle="#887744";ctx.fillRect(-10,2,20,10);ctx.strokeRect(-10,2,20,10);
+      ctx.fillStyle="#aa9966";ctx.fillRect(-8,-10,16,14);ctx.strokeRect(-8,-10,16,14);
+      // Roof
+      ctx.fillStyle="#776633";
+      ctx.beginPath();ctx.moveTo(-10,-10);ctx.lineTo(0,-18);ctx.lineTo(10,-10);ctx.closePath();ctx.fill();ctx.stroke();
+      // Gold coin symbol
+      ctx.fillStyle="#FFD54F";ctx.beginPath();ctx.arc(0,-2,4,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.font="bold 6px sans-serif";ctx.textAlign="center";ctx.fillStyle="#8B6914";ctx.fillText("$",0,0);
+      // Columns
+      ctx.fillStyle="#ccbb99";ctx.fillRect(-7,-8,3,10);ctx.fillRect(4,-8,3,10);
+    }
+    // Level indicator for all towers
+    if(t.level>1){
+      ctx.font="bold 7px sans-serif";ctx.textAlign="center";ctx.fillStyle="#FFD54F";
+      ctx.fillText("Lv"+t.level,0,16);
     }
     ctx.restore();
   }
@@ -2589,6 +2892,43 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       if(goldAccum2>=1){var g=Math.floor(goldAccum2);S.p[2].gold+=g;goldAccum2-=g;}
     }
 
+    // ─── BANK INCOME ───
+    for(var bi=0;bi<liveTowers.length;bi++){
+      var bk=liveTowers[bi];
+      if(bk.alive&&bk.income>0){
+        S.p[bk.player].gold+=bk.income*dt;
+      }
+    }
+
+    // ─── WAVE/TEMPO SYSTEM ───
+    var waveElapsed=(now-waveTimer)/1000;
+    if(wavePhase==="prep"&&waveElapsed>=WAVE_PREP_TIME){
+      wavePhase="battle";waveTimer=now;waveSpawnTimer=now;
+      addFloat(W/2,H/2-30,"\u26A0 COMBAT ! \u26A0","#ff4400");
+      updateCardBar();
+    } else if(wavePhase==="battle"){
+      // Spawn queued units (one every 300ms)
+      if(now-waveSpawnTimer>=300){
+        waveSpawnTimer=now;
+        for(var wp=1;wp<=2;wp++){
+          if(waveQueue[wp].length>0){
+            var uid=waveQueue[wp].shift();
+            var tpl2=find(ATK,uid);
+            if(tpl2){
+              var u2=createUnit(wp,tpl2);
+              liveUnits.push(u2);
+            }
+          }
+        }
+      }
+      if(waveElapsed>=WAVE_BATTLE_TIME){
+        wavePhase="prep";waveTimer=now;waveNum++;
+        waveQueue={1:[],2:[]};
+        addFloat(W/2,H/2-30,"\u2694 PREPARATION \u2694","#44cc44");
+        updateCardBar();
+      }
+    }
+
     // ─── AI (only in AI mode) ───
     if(gameMode==="ai")aiTick(now);
 
@@ -2607,6 +2947,23 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     // ─── BACKGROUND (pre-rendered) ───
     if(bgCanvas)ctx.drawImage(bgCanvas,0,0);
 
+    // ─── PATH PREVIEW OVERLAY (current player) ───
+    var myPath=cachedPaths[myPlayer];
+    if(myPath&&myPath.length>1){
+      ctx.save();
+      ctx.globalAlpha=0.15;ctx.fillStyle="#ffcc00";ctx.strokeStyle="#ffcc00";ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(myPath[0][1]*TILE_SIZE+TILE_SIZE/2,vY(myPath[0][0]*TILE_SIZE+TILE_SIZE/2));
+      for(var pi=1;pi<myPath.length;pi++){
+        ctx.lineTo(myPath[pi][1]*TILE_SIZE+TILE_SIZE/2,vY(myPath[pi][0]*TILE_SIZE+TILE_SIZE/2));
+      }
+      ctx.stroke();
+      for(var pi=0;pi<myPath.length;pi++){
+        ctx.beginPath();ctx.arc(myPath[pi][1]*TILE_SIZE+TILE_SIZE/2,vY(myPath[pi][0]*TILE_SIZE+TILE_SIZE/2),3,0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore();
+    }
+
     // ─── Animated water shimmer (only element redrawn each frame) ───
     for(var wx=0;wx<W;wx+=6){
       var shimmer=Math.sin(wx*0.15+S.gameTime*3)*0.25;
@@ -2624,12 +2981,38 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     }
     ctx.globalAlpha=1;
 
-    // ─── TIMER (on bridge) ───
+    // ─── TIMER + WAVE INFO (on bridge) ───
     ctx.font="bold 11px Cinzel,serif";ctx.textAlign="center";
     var mins=Math.floor(S.gameTime/60);var secs=Math.floor(S.gameTime%60);
     var timeStr=mins+":"+(secs<10?"0":"")+secs;
     ctx.fillStyle="#3E2723";ctx.fillText(timeStr,W/2+1,H/2+5);
     ctx.fillStyle="#FFF8E1";ctx.fillText(timeStr,W/2,H/2+4);
+    // Wave info — big phase banner
+    var wvElapsed=(now-waveTimer)/1000;
+    var wvMaxTime=wavePhase==="prep"?WAVE_PREP_TIME:WAVE_BATTLE_TIME;
+    var wvRemain=Math.max(0,Math.ceil(wvMaxTime-wvElapsed));
+    var isPrep=wavePhase==="prep";
+    // Phase banner background
+    var banW=160,banH=28,banX=W/2-banW/2,banY=H/2+8;
+    var banAlpha=isPrep?0.85:(0.7+0.15*Math.sin(now/200));
+    ctx.globalAlpha=banAlpha;
+    ctx.fillStyle=isPrep?"#2E7D32":"#BF360C";
+    roundRect(banX,banY,banW,banH,6);ctx.fill();
+    ctx.globalAlpha=1;
+    // Phase label
+    var phaseLabel=isPrep?"\u2694 PREP \u2694":"\u26A0 COMBAT \u26A0";
+    ctx.font="bold 13px Cinzel,serif";
+    ctx.fillStyle="#fff";
+    ctx.fillText(phaseLabel+" "+wvRemain+"s",W/2,banY+19);
+    // Wave number
+    ctx.font="bold 8px Cinzel,serif";
+    ctx.fillStyle="#FFD54F";
+    ctx.fillText("Vague "+waveNum,W/2,banY-2);
+    // Queue count for player
+    if(isPrep&&waveQueue[myPlayer].length>0){
+      ctx.fillStyle="#ffcc00";ctx.font="bold 8px Cinzel,serif";
+      ctx.fillText("File: "+waveQueue[myPlayer].length+" unit\u00e9s",W/2,banY+banH+12);
+    }
 
     // ─── SHAKE ───
     var shakeX=0,shakeY=0;
@@ -2660,11 +3043,25 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     liveUnits.forEach(function(u){
       if(!u.alive||u.state==="dead")return;
 
+      // Slow effect (ice tower)
+      if(u.slowed&&now<u.slowEnd){
+        u.speed=u.baseSpeed*u.slowMul;
+      } else if(u.slowed){
+        u.slowed=false;u.slowMul=1;u.slowEnd=0;
+        u.speed=u.baseSpeed;
+      }
+
+      // Haste effect
+      if(hasteEnd[u.player]>0&&now<hasteEnd[u.player]&&!u.slowed){
+        u.speed=u.baseSpeed*1.8;
+      }
+
       // Burn DoT tick (every 500ms, permanent until death)
       if(u.burning&&now-u.burnTimer>=500){
         u.burnTimer=now;
         var bd=Math.ceil(u.burnDmg*0.4);
         u.curHp-=bd;
+        stats[u.player===1?2:1].dmgDealt+=bd;
         addFloat(u.x,u.y-22,"-"+bd,"#ff4400");
         if(u.curHp<=0){killUnit(u,now);return;}
       }
@@ -2701,9 +3098,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
           return;
         }
         var enemies=u.player===1?[p2atk]:[p1atk];
-        // All units: check for nearby enemy towers to attack
-        var siegeTgt=findSiegeTarget(u);
-        if(siegeTgt){u.state="siegeFight";u.fightTarget=siegeTgt;return;}
+        // Siege units: check for enemy towers to attack
+        if(u.siege){
+          var siegeTgt=findSiegeTarget(u);
+          if(siegeTgt){u.state="siegeFight";u.fightTarget=siegeTgt;return;}
+        }
         // Ranged units: check if enemy in range first
         if(u.range>0){
           var rTgt=findRangedTarget(u,enemies,u.range);
@@ -2811,6 +3210,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
             // Apply damage + burn: primary target always hit, splash around target
             var ft=t.fightTarget;
             ft.curHp-=t.effDmg;
+            stats[t.player].dmgDealt+=t.effDmg;
             if(!ft.burning){ft.burning=true;ft.burnDmg=Math.max(ft.burnDmg,t.effDmg);ft.burnTimer=now;}
             addFloat(ft.x,ft.y-18,"-"+t.effDmg,"#ff6600");
             if(ft.curHp<=0)killUnit(ft,now);
@@ -2820,6 +3220,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
                 if(t.targets==="ground"&&e.fly)continue;
                 if(dist(ft,e)<=t.splash){
                   e.curHp-=t.effDmg;
+                  stats[t.player].dmgDealt+=t.effDmg;
                   if(!e.burning){e.burning=true;e.burnDmg=Math.max(e.burnDmg,t.effDmg);e.burnTimer=now;}
                   addFloat(e.x,e.y-18,"-"+t.effDmg,"#ff6600");
                   if(e.curHp<=0)killUnit(e,now);
@@ -2827,18 +3228,71 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
               }
             }
           }
+        } else if(t.slow>0){
+          // Ice tower: slow effect
+          if(now-t.attackTimer>=t.atkSpd){
+            t.attackTimer=now;t.bounceStart=now;
+            var ft=t.fightTarget;
+            ft.curHp-=t.effDmg;
+            stats[t.player].dmgDealt+=t.effDmg;
+            ft.slowed=true;ft.slowMul=t.slow;ft.slowEnd=now+t.slowDur;
+            addFloat(ft.x,ft.y-18,"-"+t.effDmg,"#88ccff");
+            // Ice particles
+            for(var pi=0;pi<4;pi++){particles.push({x:ft.x+(Math.random()-0.5)*12,y:ft.y+(Math.random()-0.5)*12,vx:(Math.random()-0.5)*2,vy:-Math.random()*2,life:0.8,maxLife:0.8,r:Math.random()*3+1,color:"#88ccff"});}
+            if(ft.curHp<=0)killUnit(ft,now);
+          }
+        } else if(t.chain>0){
+          // Tesla tower: chain lightning
+          if(now-t.attackTimer>=t.atkSpd){
+            t.attackTimer=now;t.bounceStart=now;
+            var ft=t.fightTarget;
+            ft.curHp-=t.effDmg;
+            stats[t.player].dmgDealt+=t.effDmg;
+            addFloat(ft.x,ft.y-18,"-"+t.effDmg,"#88aaff");
+            if(ft.curHp<=0)killUnit(ft,now);
+            // Chain to nearby enemies
+            var chainTargets=[ft];
+            var chainDmg=Math.floor(t.effDmg*0.7);
+            for(var ci=0;ci<t.chain-1;ci++){
+              var lastHit=chainTargets[chainTargets.length-1];
+              var bestChain=null,bestChainDist=60;
+              for(var i=0;i<enemies.length;i++){
+                var e=enemies[i];if(!e.alive)continue;
+                var already=false;
+                for(var j=0;j<chainTargets.length;j++){if(chainTargets[j]===e){already=true;break;}}
+                if(already)continue;
+                var d=dist(lastHit,e);
+                if(d<bestChainDist){bestChainDist=d;bestChain=e;}
+              }
+              if(!bestChain)break;
+              bestChain.curHp-=chainDmg;
+              stats[t.player].dmgDealt+=chainDmg;
+              addFloat(bestChain.x,bestChain.y-18,"-"+chainDmg,"#88aaff");
+              // Lightning line visual (draw thin lines)
+              particles.push({x:lastHit.x,y:lastHit.y,vx:0,vy:0,life:0.3,maxLife:0.3,r:1,color:"#aaccff",
+                lineToX:bestChain.x,lineToY:bestChain.y});
+              if(bestChain.curHp<=0)killUnit(bestChain,now);
+              chainTargets.push(bestChain);
+            }
+            // Lightning particles on primary
+            for(var pi=0;pi<5;pi++){particles.push({x:ft.x+(Math.random()-0.5)*15,y:ft.y+(Math.random()-0.5)*15,vx:(Math.random()-0.5)*3,vy:-Math.random()*3,life:0.5,maxLife:0.5,r:Math.random()*2+1,color:"#aaccff"});}
+          }
         } else {
           // Normal tower: fire projectile
           if(now-t.attackTimer>=t.atkSpd){
             t.attackTimer=now;t.bounceStart=now;
             var col=t.player===1?"#ffcc22":"#ff6644";
+            // Anti-air bonus: x2 damage to flying
+            var dmgMul=1;
+            if(t.id==="antiair"&&t.fightTarget.fly)dmgMul=2;
+            var pDmg=Math.floor(t.effDmg*dmgMul);
             if(t.splash>0){
               // AoE projectile
               projectiles.push({x:t.x,y:t.y,tx:t.fightTarget.x,ty:t.fightTarget.y,start:now,dur:350,color:col,
-                dmg:t.effDmg,target:t.fightTarget,attacker:null,splash:t.splash,towerPlayer:t.player,targets:t.targets});
+                dmg:pDmg,target:t.fightTarget,attacker:null,splash:t.splash,towerPlayer:t.player,targets:t.targets});
             } else {
               projectiles.push({x:t.x,y:t.y,tx:t.fightTarget.x,ty:t.fightTarget.y,start:now,dur:300,color:col,
-                dmg:t.effDmg,target:t.fightTarget,attacker:null});
+                dmg:pDmg,target:t.fightTarget,attacker:null,towerPlayer:t.player});
             }
           }
         }
@@ -2913,6 +3367,21 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       if(!u.alive)return;
       ctx.globalAlpha=1;
       drawSprite(u,now);
+      // Slow visual: blue snowflake tint
+      if(u.slowed&&now<u.slowEnd){
+        ctx.globalAlpha=0.4;ctx.fillStyle="#88ccff";
+        ctx.beginPath();ctx.arc(u.x,vY(u.y)-12,5+Math.sin(now*0.01)*2,0,Math.PI*2);ctx.fill();
+        ctx.globalAlpha=1;
+        // Snowflake text
+        ctx.font="bold 8px sans-serif";ctx.textAlign="center";
+        ctx.fillStyle="#aaddff";ctx.fillText("\u2744",u.x,vY(u.y)-18);
+      }
+      // Haste visual: blue trail particles
+      if(hasteEnd[u.player]>0&&now<hasteEnd[u.player]){
+        if(Math.random()<0.3){
+          particles.push({x:u.x+(Math.random()-0.5)*8,y:u.y+5,vx:(Math.random()-0.5)*1,vy:Math.random()*1,life:0.4,maxLife:0.4,r:Math.random()*2+1,color:"#4488ff"});
+        }
+      }
       // Burn visual: flickering flames on burning units
       if(u.burning){
         var fy=vY(u.y);
@@ -2952,6 +3421,7 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
               var d=dist({x:pr.tx,y:pr.ty},e);
               if(d<=pr.splash){
                 e.curHp-=pr.dmg;
+                if(splashOwner)stats[splashOwner].dmgDealt+=pr.dmg;
                 addFloat(e.x,e.y-22,"-"+pr.dmg,"#ff8844");
                 if(e.curHp<=0)killUnit(e,now);
               }
@@ -2962,6 +3432,8 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
             var tg=pr.target;
             if(tg.alive){
               tg.curHp-=pr.dmg;
+              var prOwner=pr.towerPlayer||pr.unitPlayer;
+              if(prOwner)stats[prOwner].dmgDealt+=pr.dmg;
               addFloat(tg.x,tg.y-22,"-"+pr.dmg,"#ff4422");
               for(var pi=0;pi<4;pi++){particles.push({x:tg.x+(Math.random()-0.5)*10,y:tg.y-5,vx:(Math.random()-0.5)*2,vy:-Math.random()*2.5,life:0.8,maxLife:0.8,r:Math.random()*3+1,color:Math.random()>0.5?"#ff6622":"#ffaa22"});}
               shakes.push({start:now,dur:150,intensity:2});
@@ -2989,7 +3461,19 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
     particles=particles.filter(function(pt){
       pt.life-=0.02;if(pt.life<=0)return false;
       pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=0.05;
-      ctx.globalAlpha=pt.life;ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,Math.PI*2);ctx.fillStyle=pt.color;ctx.fill();return true;
+      ctx.globalAlpha=pt.life;
+      if(pt.lineToX!==undefined){
+        // Lightning line particle
+        ctx.beginPath();ctx.moveTo(pt.x,pt.y);
+        var mx=(pt.x+pt.lineToX)/2+(Math.random()-0.5)*8;
+        var my=(pt.y+pt.lineToY)/2+(Math.random()-0.5)*8;
+        ctx.quadraticCurveTo(mx,my,pt.lineToX,pt.lineToY);
+        ctx.strokeStyle=pt.color;ctx.lineWidth=2;ctx.stroke();
+        ctx.lineWidth=1;
+      } else {
+        ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,Math.PI*2);ctx.fillStyle=pt.color;ctx.fill();
+      }
+      return true;
     });
     ctx.globalAlpha=1;ctx.restore();
 
@@ -3017,9 +3501,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
         var ov=E("overlay-gameover"),ti=E("el-go-title"),tx=E("el-go-text");
         ov.classList.add("active");
         var mins=Math.floor(S.gameTime/60);var secs=Math.floor(S.gameTime%60);var timeStr=mins+"m"+((secs<10?"0":"")+secs)+"s";
-        if(S.p[myPlayer].hp<=0&&S.p[opp].hp<=0){ti.textContent="Destruction Mutuelle !";ti.className="result-title cd";tx.textContent="Les deux ch\u00e2teaux sont tomb\u00e9s !\nDur\u00e9e : "+timeStr;}
-        else if(S.p[opp].hp<=0){ti.textContent="Victoire !";ti.className="result-title c1";tx.textContent="Ch\u00e2teau de "+opponentName+" d\u00e9truit !\nDur\u00e9e : "+timeStr;}
-        else{ti.textContent="D\u00e9faite !";ti.className="result-title c2";tx.textContent=opponentName+" a d\u00e9truit votre ch\u00e2teau !\nDur\u00e9e : "+timeStr;}
+        var sMe=stats[myPlayer],sOpp=stats[opp];
+        var statsTable="\n\n--- Statistiques ---\n"
+          +playerName+": DMG "+Math.floor(sMe.dmgDealt)+" | Kills "+sMe.unitsKilled+" | Tours "+sMe.towersDestroyed+" | Or "+Math.floor(sMe.goldSpent)+" | Sorts "+sMe.spellsCast
+          +"\n"+opponentName+": DMG "+Math.floor(sOpp.dmgDealt)+" | Kills "+sOpp.unitsKilled+" | Tours "+sOpp.towersDestroyed+" | Or "+Math.floor(sOpp.goldSpent)+" | Sorts "+sOpp.spellsCast;
+        if(S.p[myPlayer].hp<=0&&S.p[opp].hp<=0){ti.textContent="Destruction Mutuelle !";ti.className="result-title cd";tx.textContent="Les deux ch\u00e2teaux sont tomb\u00e9s !\nDur\u00e9e : "+timeStr+statsTable;}
+        else if(S.p[opp].hp<=0){ti.textContent="Victoire !";ti.className="result-title c1";tx.textContent="Ch\u00e2teau de "+opponentName+" d\u00e9truit !\nDur\u00e9e : "+timeStr+statsTable;}
+        else{ti.textContent="D\u00e9faite !";ti.className="result-title c2";tx.textContent=opponentName+" a d\u00e9truit votre ch\u00e2teau !\nDur\u00e9e : "+timeStr+statsTable;}
       },1000);
       return;
     }
@@ -3036,8 +3524,14 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
       APOCALYPSE_COST:APOCALYPSE_COST,
       APOCALYPSE_INCOME_PENALTY:APOCALYPSE_INCOME_PENALTY,
       GOLD_RATE_BASE:GOLD_RATE_BASE,
+      SPELLS:SPELLS,
+      stats:stats,
       fm:fm,S:S,
       triggerApocalypse:triggerApocalypse,
+      upgradeTower:upgradeTower,
+      castSpell:castSpell,
+      get waveNum(){return waveNum;},
+      get wavePhase(){return wavePhase;},
       get liveUnits(){return liveUnits;},
       get liveTowers(){return liveTowers;},
       get MAP(){return MAP;},
